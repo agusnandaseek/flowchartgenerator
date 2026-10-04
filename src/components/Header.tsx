@@ -15,17 +15,20 @@ import {
   Loader2,
   Workflow,
   Network,
+  Table2,
 } from 'lucide-react';
 import { FLOWCHART_TEMPLATES } from '../utils/templates';
 import { STRUCTURE_TEMPLATES } from '../utils/structureTemplates';
+import { IPO_TEMPLATES } from '../utils/ipoTemplates';
 
 interface HeaderProps {
-  activeMode: 'flowchart' | 'structure';
-  onChangeMode: (mode: 'flowchart' | 'structure') => void;
+  activeMode: 'flowchart' | 'structure' | 'ipo';
+  onChangeMode: (mode: 'flowchart' | 'structure' | 'ipo') => void;
   projectName: string;
   onSetProjectName: (name: string) => void;
   onOpenProjectModal: () => void;
   onSelectTemplate: (code: string) => void;
+  onSelectIpoTemplate?: (templateId: string) => void;
   onExportPNG: () => void;
   onExportJSON: () => void;
   direction: 'TB' | 'LR';
@@ -44,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSetProjectName,
   onOpenProjectModal,
   onSelectTemplate,
+  onSelectIpoTemplate,
   onExportPNG,
   onExportJSON,
   direction,
@@ -58,12 +62,18 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="h-14 bg-white border-b border-slate-200 px-3 md:px-4 flex items-center justify-between shrink-0 select-none z-20 gap-2">
       {/* Brand & Project Name */}
       <div className="flex items-center gap-2.5 min-w-0">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-2xs shrink-0 transition-colors ${
-          activeMode === 'structure'
-            ? 'bg-gradient-to-br from-blue-600 to-indigo-700'
-            : 'bg-gradient-to-br from-indigo-600 to-blue-700'
-        }`}>
-          {activeMode === 'structure' ? (
+        <div
+          className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-2xs shrink-0 transition-colors ${
+            activeMode === 'ipo'
+              ? 'bg-gradient-to-br from-emerald-600 to-teal-700'
+              : activeMode === 'structure'
+              ? 'bg-gradient-to-br from-blue-600 to-indigo-700'
+              : 'bg-gradient-to-br from-indigo-600 to-blue-700'
+          }`}
+        >
+          {activeMode === 'ipo' ? (
+            <Table2 className="w-4 h-4" />
+          ) : activeMode === 'structure' ? (
             <Network className="w-4 h-4" />
           ) : (
             <FileCode2 className="w-4 h-4" />
@@ -93,11 +103,11 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Mode Switcher: Flowchart vs Structure Chart */}
+      {/* Mode Switcher: Flowchart vs Structure Chart vs IPO Chart */}
       <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0 shadow-2xs">
         <button
           onClick={() => onChangeMode('flowchart')}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
             activeMode === 'flowchart'
               ? 'bg-white text-indigo-700 shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
@@ -110,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={() => onChangeMode('structure')}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
             activeMode === 'structure'
               ? 'bg-blue-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900'
@@ -120,6 +130,19 @@ export const Header: React.FC<HeaderProps> = ({
           <Network className="w-3.5 h-3.5" />
           <span>Structure Chart</span>
         </button>
+
+        <button
+          onClick={() => onChangeMode('ipo')}
+          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            activeMode === 'ipo'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+          title="Beralih ke IPO Chart Builder (Input – Process – Output)"
+        >
+          <Table2 className="w-3.5 h-3.5" />
+          <span>IPO Chart</span>
+        </button>
       </div>
 
       {/* Center Controls: Templates & Direction */}
@@ -128,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs">
           <Sparkles className="w-3.5 h-3.5 text-amber-500 ml-1.5 shrink-0" />
           <select
-            className="bg-transparent text-xs text-slate-700 font-medium py-1 pr-2 outline-none cursor-pointer"
+            className="bg-transparent text-xs text-slate-700 font-medium py-1 pr-2 outline-none cursor-pointer max-w-[200px] truncate"
             defaultValue=""
             onChange={(e) => {
               if (e.target.value) {
@@ -138,29 +161,48 @@ export const Header: React.FC<HeaderProps> = ({
                     onSelectTemplate(tpl.code);
                     onSetProjectName(tpl.title.replace(/^\d+\.\s*/, ''));
                   }
-                } else {
+                } else if (activeMode === 'structure') {
                   const tpl = STRUCTURE_TEMPLATES.find((t) => t.id === e.target.value);
                   if (tpl) {
                     onSelectTemplate(tpl.code);
                     onSetProjectName(tpl.title.replace(/^\d+\.\s*/, ''));
                   }
+                } else if (activeMode === 'ipo' && onSelectIpoTemplate) {
+                  onSelectIpoTemplate(e.target.value);
                 }
                 e.target.value = '';
               }
             }}
           >
             <option value="" disabled>
-              {activeMode === 'flowchart' ? 'Pilih Template Flowchart...' : 'Pilih Template Structure Chart...'}
+              {activeMode === 'flowchart'
+                ? 'Pilih Template Flowchart...'
+                : activeMode === 'structure'
+                ? 'Pilih Template Structure...'
+                : 'Pilih Template IPO...'}
             </option>
-            {(activeMode === 'flowchart' ? FLOWCHART_TEMPLATES : STRUCTURE_TEMPLATES).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
+            {activeMode === 'flowchart' &&
+              FLOWCHART_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            {activeMode === 'structure' &&
+              STRUCTURE_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            {activeMode === 'ipo' &&
+              IPO_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
           </select>
         </div>
 
-        {/* Direction switch (Only active in Flowchart mode) */}
+        {/* Direction switch (Only in Flowchart mode) / Mode indicator */}
         {activeMode === 'flowchart' ? (
           <button
             onClick={onToggleDirection}
@@ -179,10 +221,15 @@ export const Header: React.FC<HeaderProps> = ({
               </>
             )}
           </button>
-        ) : (
+        ) : activeMode === 'structure' ? (
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg shadow-2xs">
             <Network className="w-3.5 h-3.5 text-blue-600" />
             <span>Top-Down Tree</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg shadow-2xs">
+            <Table2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Academic IPO</span>
           </div>
         )}
       </div>
@@ -193,13 +240,13 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onExportJSON}
           className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-medium shadow-2xs transition-all"
-          title="Unduh berkas pseudocode format JSON (.json)"
+          title="Unduh berkas konfigurasi format JSON (.json)"
         >
           <FileJson className="w-3.5 h-3.5 text-emerald-600" />
           <span className="hidden sm:inline">JSON</span>
         </button>
 
-        {/* Fullscreen Flowchart button */}
+        {/* Fullscreen button */}
         {onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
@@ -210,14 +257,14 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
             title={
               isFullscreenFlowchart
-                ? 'Tampilkan Menu Code (Keluar Layar Penuh)'
-                : 'Layar Penuh Flowchart (Sembunyikan Menu Code)'
+                ? 'Tampilkan Panel Input (Keluar Layar Penuh)'
+                : 'Layar Penuh Preview (Sembunyikan Panel Input)'
             }
           >
             {isFullscreenFlowchart ? (
               <>
                 <Minimize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Tampilkan Code</span>
+                <span className="hidden sm:inline">Tampilkan Editor</span>
               </>
             ) : (
               <>
@@ -228,8 +275,8 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Share Button with Unique Code */}
-        {onShareProject && (
+        {/* Share Button (Flowchart mode) */}
+        {activeMode === 'flowchart' && onShareProject && (
           <button
             onClick={onShareProject}
             disabled={isSharing}
@@ -248,8 +295,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Export PNG */}
         <button
           onClick={onExportPNG}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all shadow-indigo-200"
-          title="Download gambar Flowchart format PNG resolusi tinggi tanpa terpotong"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-all text-white ${
+            activeMode === 'ipo'
+              ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+              : activeMode === 'structure'
+              ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'
+              : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+          }`}
+          title="Download gambar format PNG resolusi tinggi tanpa terpotong"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Ekspor PNG</span>
@@ -259,7 +312,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onOpenHelp}
           className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-          title="Panduan Sintaks & Bentuk Flowchart"
+          title="Panduan Penggunaan & Dokumentasi"
         >
           <HelpCircle className="w-4 h-4" />
         </button>

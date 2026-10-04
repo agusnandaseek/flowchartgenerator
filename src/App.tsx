@@ -5,6 +5,8 @@ import { StructurePresetToolbar } from './components/StructurePresetToolbar';
 import { PseudocodeEditor, type PseudocodeEditorRef } from './components/PseudocodeEditor';
 import { FlowchartPreview, type FlowchartPreviewRef } from './components/FlowchartPreview';
 import { StructureChartPreview, type StructureChartPreviewRef } from './components/StructureChartPreview';
+import { IpoEditor } from './components/IpoEditor';
+import { IpoPreview, type IpoPreviewRef } from './components/IpoPreview';
 import { HelpModal } from './components/HelpModal';
 import { ProjectModal } from './components/ProjectModal';
 import { ShareModal } from './components/ShareModal';
@@ -12,7 +14,9 @@ import { parsePseudocode } from './utils/parser';
 import { parseStructureChart } from './utils/structureParser';
 import { FLOWCHART_TEMPLATES } from './utils/templates';
 import { STRUCTURE_TEMPLATES } from './utils/structureTemplates';
+import { IPO_TEMPLATES } from './utils/ipoTemplates';
 import { type FlowDensity, type FlowEdgeStyle } from './utils/layout';
+import type { IpoFunction, IpoConnection } from './types/ipoChart';
 import {
   getAutoSave,
   setAutoSave,
@@ -23,7 +27,7 @@ import {
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 export function App() {
-  const [activeMode, setActiveMode] = useState<'flowchart' | 'structure'>('flowchart');
+  const [activeMode, setActiveMode] = useState<'flowchart' | 'structure' | 'ipo'>('flowchart');
 
   // --- FLOWCHART MODE STATE ---
   const autoSaved = useMemo(() => getAutoSave(), []);
@@ -61,6 +65,27 @@ export function App() {
     autoSavedStructure?.code || STRUCTURE_TEMPLATES[0].code
   );
 
+  // --- IPO CHART MODE STATE ---
+  const autoSavedIpo = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('ipo_chart_studio_autosave');
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [ipoProjectName, setIpoProjectName] = useState<string>(
+    autoSavedIpo?.projectName || IPO_TEMPLATES[1].data.projectName
+  );
+  const [ipoFunctions, setIpoFunctions] = useState<IpoFunction[]>(
+    autoSavedIpo?.functions || IPO_TEMPLATES[1].data.functions
+  );
+  const [ipoConnections, setIpoConnections] = useState<IpoConnection[]>(
+    autoSavedIpo?.connections || IPO_TEMPLATES[1].data.connections
+  );
+
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState<boolean>(false);
   const [isFullscreenFlowchart, setIsFullscreenFlowchart] = useState<boolean>(false);
@@ -92,63 +117,121 @@ export function App() {
 
   const editorRef = useRef<PseudocodeEditorRef>(null);
   const previewRef = useRef<FlowchartPreviewRef>(null);
+  const structureEditorRef = useRef<PseudocodeEditorRef>(null);
+  const structurePreviewRef = useRef<StructureChartPreviewRef>(null);
+  const ipoPreviewRef = useRef<IpoPreviewRef>(null);
 
   const handleToggleFullscreen = () => {
     setIsFullscreenFlowchart((prev) => !prev);
   };
 
-  // Check URL parameter for shared project on mount (?p=<id> or ?project=<id> or #/p/<id> or /p/<id>)
+  // Check URL parameter for shared project on mount
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const pathMatch = window.location.pathname.match(/\/p\/([a-zA-Z0-9_-]+)/);
-    const sharedId =
-      searchParams.get('p') ||
-      searchParams.get('project') ||
-      (window.location.hash.startsWith('#/p/') ? window.location.hash.replace('#/p/', '') : null) ||
-      (pathMatch ? pathMatch[1] : null);
-
-    if (sharedId) {
-      setIsLoadingShared(true);
-      fetchSharedProject(sharedId)
-        .then((data) => {
-          if (data) {
-            setProjectName(data.name);
-            setCode(data.code);
-            setDirection(data.direction);
-            if (data.density) setDensity(data.density);
-            if (data.edgeStyle) setEdgeStyle(data.edgeStyle);
-            if (data.nodePositions && Object.keys(data.nodePositions).length > 0) {
-              setCustomNodePositions(data.nodePositions);
-            }
-            showToast(`Memuat proyek bersama & tata letak: "${data.name}"`, 'success');
-          } else {
-            showToast(`Proyek dengan kode "${sharedId}" tidak ditemukan atau tautan telah kedaluwarsa.`, 'error');
+    const handleUrlProject = async () => {
+      let projectId: string | null = null;
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryP = urlParams.get('p') || urlParams.get('project');
+      if (queryP) {
+        projectId = queryP;
+      } else {
+        const hash = window.location.hash;
+        if (hash.startsWith('#/p/') || hash.startsWith('#/project/')) {
+          projectId = hash.replace(/^#\/(p|project)\//, '');
+        } else {
+          const pathname = window.location.pathname;
+          const match = pathname.match(/^\/p\/([a-zA-Z0-9_-]+)/);
+          if (match) {
+            projectId = match[1];
           }
-        })
-        .catch((err) => {
-          console.error(err);
-          showToast('Gagal memuat proyek dari tautan bersama.', 'error');
-        })
-        .finally(() => {
+        }
+      }
+
+      if (projectId) {
+        setIsLoadingShared(true);
+        try {
+          const remoteData = await fetchSharedProject(projectId);
+          if (remoteData) {
+            setProjectName(remoteData.name);
+            setCode(remoteData.code);
+            setDirection(remoteData.direction || 'TB');
+            if (remoteData.density) setDensity(remoteData.density);
+            if (remoteData.edgeStyle) setEdgeStyle(remoteData.edgeStyle);
+            if (remoteData.nodePositions) setCustomNodePositions(remoteData.nodePositions);
+            showToast(`Proyek "${remoteData.name}" berhasil dimuat dari cloud!`, 'success');
+            if (window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          } else {
+            showToast('Proyek yang dibagikan tidak ditemukan atau telah kedaluwarsa.', 'error');
+          }
+        } catch (err) {
+          console.error('Error fetching shared project from cloud:', err);
+          showToast('Gagal memuat proyek bersama dari cloud.', 'error');
+        } finally {
           setIsLoadingShared(false);
-        });
-    }
+        }
+      }
+    };
+
+    handleUrlProject();
   }, []);
 
-  // Auto-save whenever code, name, direction, density, edgeStyle, or nodePositions change
+  // Autosave Flowchart
   useEffect(() => {
-    setAutoSave({
-      code,
-      name: projectName,
-      direction,
-      density,
-      edgeStyle,
-      nodePositions: customNodePositions || undefined,
-    });
+    const timer = setTimeout(() => {
+      setAutoSave({
+        name: projectName,
+        code,
+        direction,
+        density,
+        edgeStyle,
+        nodePositions: customNodePositions || previewRef.current?.getNodePositions(),
+      });
+    }, 400);
+    return () => clearTimeout(timer);
   }, [code, projectName, direction, density, edgeStyle, customNodePositions]);
 
-  // Debounced parsing for fluid editing
-  const [debouncedCode, setDebouncedCode] = useState<string>(code);
+  // Autosave Structure Chart
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          'structure_chart_studio_autosave',
+          JSON.stringify({
+            name: structureProjectName,
+            code: structureCode,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch (err) {
+        console.error('Failed to autosave structure chart:', err);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [structureCode, structureProjectName]);
+
+  // Autosave IPO Chart
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          'ipo_chart_studio_autosave',
+          JSON.stringify({
+            projectName: ipoProjectName,
+            functions: ipoFunctions,
+            connections: ipoConnections,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+      } catch (err) {
+        console.error('Failed to autosave IPO chart:', err);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [ipoProjectName, ipoFunctions, ipoConnections]);
+
+  // Debounce Flowchart parser
+  const [debouncedCode, setDebouncedCode] = useState(code);
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedCode(code);
@@ -156,46 +239,12 @@ export function App() {
     return () => clearTimeout(timer);
   }, [code]);
 
-  // Parse pseudocode into graph nodes and edges
   const { nodes, edges, errors } = useMemo(() => {
     return parsePseudocode(debouncedCode);
   }, [debouncedCode]);
 
-  // Preset button insertion handler
-  const handleInsertSnippet = (snippet: string) => {
-    if (editorRef.current) {
-      editorRef.current.insertSnippet(snippet);
-    } else {
-      setCode((prev) => prev + '\n' + snippet);
-    }
-  };
-
-  // Template selector
-  const handleSelectTemplate = (templateCode: string) => {
-    setCode(templateCode);
-  };
-
-  // Reset to default
-  const handleResetDefault = () => {
-    setCode(FLOWCHART_TEMPLATES[0].code);
-    setProjectName('Hitung Luas Persegi Panjang');
-  };
-
-  // Auto-save Structure Chart
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'structure_chart_studio_autosave',
-        JSON.stringify({
-          code: structureCode,
-          name: structureProjectName,
-        })
-      );
-    } catch {}
-  }, [structureCode, structureProjectName]);
-
-  // Debounced parsing for Structure Chart
-  const [debouncedStructureCode, setDebouncedStructureCode] = useState<string>(structureCode);
+  // Debounce Structure Chart parser
+  const [debouncedStructureCode, setDebouncedStructureCode] = useState(structureCode);
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedStructureCode(structureCode);
@@ -207,8 +256,14 @@ export function App() {
     return parseStructureChart(debouncedStructureCode);
   }, [debouncedStructureCode]);
 
-  const structureEditorRef = useRef<PseudocodeEditorRef>(null);
-  const structurePreviewRef = useRef<StructureChartPreviewRef>(null);
+  // Handlers for snippet insertion & templates
+  const handleInsertSnippet = (snippet: string) => {
+    if (editorRef.current) {
+      editorRef.current.insertSnippet(snippet);
+    } else {
+      setCode((prev) => prev + '\n' + snippet);
+    }
+  };
 
   const handleInsertStructureSnippet = (snippet: string) => {
     if (structureEditorRef.current) {
@@ -218,13 +273,41 @@ export function App() {
     }
   };
 
+  const handleSelectTemplate = (templateCode: string) => {
+    setCode(templateCode);
+    setCustomNodePositions(null);
+  };
+
   const handleSelectStructureTemplate = (templateCode: string) => {
     setStructureCode(templateCode);
+  };
+
+  const handleSelectIpoTemplate = (templateId: string) => {
+    const tpl = IPO_TEMPLATES.find((t) => t.id === templateId);
+    if (tpl) {
+      setIpoProjectName(tpl.data.projectName);
+      setIpoFunctions(tpl.data.functions);
+      setIpoConnections(tpl.data.connections);
+      showToast(`Template "${tpl.title}" berhasil dimuat!`, 'success');
+    }
+  };
+
+  const handleResetDefault = () => {
+    setCode(FLOWCHART_TEMPLATES[0].code);
+    setProjectName('Hitung Luas Persegi Panjang');
+    setCustomNodePositions(null);
   };
 
   const handleResetStructureDefault = () => {
     setStructureCode(STRUCTURE_TEMPLATES[0].code);
     setStructureProjectName('Record Order System (BINUS)');
+  };
+
+  const handleResetIpoBlank = () => {
+    setIpoProjectName('Functional Design Baru');
+    setIpoFunctions([]);
+    setIpoConnections([]);
+    showToast('Proyek IPO berhasil di-reset ke kanvas kosong.', 'info');
   };
 
   const handleNodeSelectFlowchart = useCallback((lineNumber: number) => {
@@ -235,7 +318,7 @@ export function App() {
     structureEditorRef.current?.highlightLine(lineNumber);
   }, []);
 
-  // Direction toggle (TB vs LR)
+  // Direction toggle
   const handleToggleDirection = () => {
     setDirection((prev) => (prev === 'TB' ? 'LR' : 'TB'));
   };
@@ -247,10 +330,15 @@ export function App() {
         await previewRef.current.exportImage('png', projectName);
         showToast('Berhasil mengekspor Flowchart PNG!', 'success');
       }
-    } else {
+    } else if (activeMode === 'structure') {
       if (structurePreviewRef.current) {
         await structurePreviewRef.current.exportImage('png', structureProjectName);
         showToast('Berhasil mengekspor Structure Chart PNG!', 'success');
+      }
+    } else {
+      if (ipoPreviewRef.current) {
+        await ipoPreviewRef.current.exportAllCharts(`${ipoProjectName.toLowerCase().replace(/\s+/g, '_')}_ipo_charts`);
+        showToast('Berhasil mengekspor IPO Charts PNG!', 'success');
       }
     }
   };
@@ -267,7 +355,7 @@ export function App() {
         edgeStyle,
         nodePositions: livePositions,
       });
-    } else {
+    } else if (activeMode === 'structure') {
       const dataStr = JSON.stringify(
         {
           appName: 'Structure Chart Studio',
@@ -283,6 +371,26 @@ export function App() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.download = `${structureProjectName.toLowerCase().replace(/\s+/g, '_')}_structure.json`;
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const dataStr = JSON.stringify(
+        {
+          appName: 'IPO Chart Studio',
+          version: '1.0.0',
+          projectName: ipoProjectName,
+          functions: ipoFunctions,
+          connections: ipoConnections,
+          createdAt: new Date().toISOString(),
+        },
+        null,
+        2
+      );
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = `${ipoProjectName.toLowerCase().replace(/\s+/g, '_')}_ipo.json`;
       link.href = url;
       link.click();
       URL.revokeObjectURL(url);
@@ -303,17 +411,16 @@ export function App() {
     setDirection(p.direction);
     if (p.density) setDensity(p.density);
     if (p.edgeStyle) setEdgeStyle(p.edgeStyle);
-    if (p.nodePositions) {
-      setCustomNodePositions(p.nodePositions);
-    }
+    if (p.nodePositions) setCustomNodePositions(p.nodePositions);
+    setIsProjectModalOpen(false);
   };
 
-  // Create public cloud share link
+  // Share project handler
   const handleShareProject = async () => {
     setIsSharing(true);
     try {
       const livePositions = previewRef.current?.getNodePositions() || customNodePositions || {};
-      const result = await createCloudShare({
+      const { id, url } = await createCloudShare({
         name: projectName,
         code,
         direction,
@@ -322,27 +429,16 @@ export function App() {
         nodePositions: livePositions,
       });
 
-      // Update browser URL query without reload
-      const newUrl = `${window.location.origin}${window.location.pathname}?p=${result.id}`;
-      window.history.pushState({ path: newUrl }, '', newUrl);
-
-      // Also copy directly to clipboard
-      try {
-        await navigator.clipboard.writeText(newUrl);
-        showToast(`Tautan & tata letak berhasil disimpan ke cloud! Kode: ${result.id}`, 'success');
-      } catch {
-        showToast(`Tautan berhasil dibuat! Kode: ${result.id}`, 'success');
-      }
-
       setShareData({
         isOpen: true,
-        shareUrl: newUrl,
-        projectId: result.id,
+        shareUrl: url,
+        projectId: id,
         projectName,
       });
+      showToast('Tautan berhasil dibuat!', 'success');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Server sibuk';
-      showToast('Gagal membagikan: ' + message, 'error');
+      console.error('Failed to create cloud share:', err);
+      showToast('Gagal membagikan ke cloud. Pastikan internet aktif.', 'error');
     } finally {
       setIsSharing(false);
     }
@@ -354,12 +450,27 @@ export function App() {
       <Header
         activeMode={activeMode}
         onChangeMode={setActiveMode}
-        projectName={activeMode === 'flowchart' ? projectName : structureProjectName}
-        onSetProjectName={activeMode === 'flowchart' ? setProjectName : setStructureProjectName}
+        projectName={
+          activeMode === 'flowchart'
+            ? projectName
+            : activeMode === 'structure'
+            ? structureProjectName
+            : ipoProjectName
+        }
+        onSetProjectName={(name) => {
+          if (activeMode === 'flowchart') setProjectName(name);
+          else if (activeMode === 'structure') setStructureProjectName(name);
+          else setIpoProjectName(name);
+        }}
         onOpenProjectModal={() => setIsProjectModalOpen(true)}
         direction={direction}
         onToggleDirection={handleToggleDirection}
-        onSelectTemplate={activeMode === 'flowchart' ? handleSelectTemplate : handleSelectStructureTemplate}
+        onSelectTemplate={
+          activeMode === 'flowchart'
+            ? handleSelectTemplate
+            : handleSelectStructureTemplate
+        }
+        onSelectIpoTemplate={handleSelectIpoTemplate}
         onExportPNG={handleExportPNG}
         onExportJSON={handleExportJSON}
         onOpenHelp={() => setIsHelpOpen(true)}
@@ -371,7 +482,7 @@ export function App() {
 
       {/* Main Content: Split Screen Layout */}
       <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* LEFT SECTION: Preset Toolbar & Code Editor (40%) - Hidden when Fullscreen */}
+        {/* LEFT SECTION: Builder / Code Editor (40%) - Hidden when Fullscreen */}
         {!isFullscreenFlowchart && (
           <section className="w-full md:w-[40%] h-1/2 md:h-full flex flex-col min-h-0 bg-white border-b md:border-b-0 md:border-r border-slate-200 shrink-0">
             {activeMode === 'flowchart' ? (
@@ -388,7 +499,7 @@ export function App() {
                   onResetDefault={handleResetDefault}
                 />
               </>
-            ) : (
+            ) : activeMode === 'structure' ? (
               <>
                 {/* Structure Chart Notations Toolbar */}
                 <StructurePresetToolbar onInsertSnippet={handleInsertStructureSnippet} />
@@ -402,6 +513,16 @@ export function App() {
                   onResetDefault={handleResetStructureDefault}
                 />
               </>
+            ) : (
+              /* IPO Chart Builder */
+              <IpoEditor
+                functions={ipoFunctions}
+                connections={ipoConnections}
+                onChangeFunctions={setIpoFunctions}
+                onChangeConnections={setIpoConnections}
+                onLoadTemplate={handleSelectIpoTemplate}
+                onResetBlank={handleResetIpoBlank}
+              />
             )}
           </section>
         )}
@@ -424,7 +545,7 @@ export function App() {
               onPositionsChange={setCustomNodePositions}
               onNodeSelect={handleNodeSelectFlowchart}
             />
-          ) : (
+          ) : activeMode === 'structure' ? (
             <StructureChartPreview
               ref={structurePreviewRef}
               rawNodes={structureNodes}
@@ -432,6 +553,15 @@ export function App() {
               isFullscreen={isFullscreenFlowchart}
               onToggleFullscreen={handleToggleFullscreen}
               onNodeSelect={handleNodeSelectStructure}
+            />
+          ) : (
+            <IpoPreview
+              ref={ipoPreviewRef}
+              functions={ipoFunctions}
+              connections={ipoConnections}
+              projectName={ipoProjectName}
+              isFullscreen={isFullscreenFlowchart}
+              onToggleFullscreen={handleToggleFullscreen}
             />
           )}
         </section>
@@ -473,7 +603,7 @@ export function App() {
           <div className="bg-white rounded-xl p-4 shadow-xl border border-slate-200 flex items-center gap-3">
             <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
             <span className="text-xs font-semibold text-slate-700">
-              Memuat diagram flowchart dari tautan bersama...
+              Memuat diagram dari tautan bersama...
             </span>
           </div>
         </div>
