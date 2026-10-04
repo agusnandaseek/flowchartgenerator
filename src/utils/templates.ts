@@ -2,57 +2,72 @@ import type { TemplateItem } from '../types/flowchart';
 
 export const FLOWCHART_TEMPLATES: TemplateItem[] = [
   {
-    id: 'luas-persegi-panjang',
-    title: '1. Hitung Luas Persegi Panjang (Sekuensial)',
-    description: 'Diagram alur sekuensial sederhana: Input -> Proses Rumus -> Output',
+    id: 'auth-verification',
+    title: '1. Autentikasi Pengguna & OTP (User Security)',
+    description: 'Diagram alur keamanan: verifikasi email & password, pembuatan kode OTP, dan validasi 2FA',
     code: `MULAI
-MASUKKAN panjang, lebar
-luas = panjang * lebar
-keliling = 2 * (panjang + lebar)
-TAMPILKAN "Luas Persegi Panjang: ", luas
-TAMPILKAN "Keliling Persegi Panjang: ", keliling
-SELESAI`,
-  },
-  {
-    id: 'ganjil-genap',
-    title: '2. Cek Bilangan Ganjil / Genap (Percabangan If-Else)',
-    description: 'Diagram alur keputusan dengan dua alur logika Ya dan Tidak',
-    code: `MULAI
-MASUKKAN bilangan
-sisa = bilangan % 2
-JIKA sisa == 0 MAKA
-    TAMPILKAN bilangan, " adalah bilangan GENAP"
+MASUKKAN email, password
+is_valid = verifikasi_kredensial(email, password)
+JIKA is_valid == true MAKA
+    otp_code = kirim_kode_otp(email)
+    MASUKKAN input_otp
+    JIKA input_otp == otp_code MAKA
+        TAMPILKAN "Login Berhasil! Selamat Datang"
+    LAINNYA
+        TAMPILKAN "Kode OTP Salah atau Kedaluwarsa"
+    AKHIR-JIKA
 LAINNYA
-    TAMPILKAN bilangan, " adalah bilangan GANJIL"
+    TAMPILKAN "Email atau Password Salah!"
 AKHIR-JIKA
 SELESAI`,
   },
   {
-    id: 'perulangan-while',
-    title: '3. Cetak Angka 1 sampai N (Perulangan While)',
-    description: 'Diagram alur dengan siklus loop berulang hingga kondisi false',
+    id: 'payment-checkout',
+    title: '2. Proses Checkout & Payment Gateway (E-Commerce)',
+    description: 'Diagram alur transaksi belanja: pengecekan saldo dompet digital dan status pembayaran',
     code: `MULAI
-MASUKKAN batas_n
-counter = 1
-SELAMA counter <= batas_n LAKUKAN
-    TAMPILKAN "Angka ke-", counter
-    counter = counter + 1
+MASUKKAN total_belanja, saldo_dompet
+JIKA saldo_dompet >= total_belanja MAKA
+    saldo_akhir = saldo_dompet - total_belanja
+    status_bayar = "LUNAS"
+    TAMPILKAN "Pembayaran Sukses! Sisa Saldo: ", saldo_akhir
+LAINNYA
+    status_bayar = "GAGAL"
+    TAMPILKAN "Saldo Tidak Mencukupi, Silakan Top Up"
+AKHIR-JIKA
+SELESAI`,
+  },
+  {
+    id: 'smart-iot-thermostat',
+    title: '3. Kontrol Suhu Otomatis IoT (Perulangan Sensor)',
+    description: 'Diagram monitoring siklus suhu ruangan dengan saklar dan aktuator AC otomatis',
+    code: `MULAI
+target_suhu = 22
+MASUKKAN sensor_aktif
+SELAMA sensor_aktif == true LAKUKAN
+    suhu_sekarang = baca_sensor_suhu()
+    JIKA suhu_sekarang > target_suhu MAKA
+        nyalakan_pendingin_ac()
+    LAINNYA
+        matikan_pendingin_ac()
+    AKHIR-JIKA
+    sensor_aktif = cek_status_saklar()
 AKHIR-SELAMA
-TAMPILKAN "Perulangan Selesai!"
+TAMPILKAN "Sistem Termostat Non-Aktif"
 SELESAI`,
   },
   {
-    id: 'auto-adjust-text',
-    title: '4. Demo Auto-Adjust Ukuran Teks Panjang',
-    description: 'Bentuk shape otomatis membesar sesuai panjang dan wrapping teks',
+    id: 'credit-risk-scoring',
+    title: '4. Evaluasi Risiko Kredit (Multi-Kondisi)',
+    description: 'Analisis skor kelayakan pinjaman finansial berdasarkan pendapatan dan riwayat kredit',
     code: `MULAI
-MASUKKAN nama_lengkap_mahasiswa_dan_nomor_induk_kependudukan
-status_kelulusan = hitung_rata_rata_nilai_ujian_nasional_dan_proyek_akhir()
-JIKA nilai_rata_rata >= 80.5 DAN status_kehadiran_kuliah >= 75 MAKA
-    TAMPILKAN "Selamat! Anda dinyatakan LULUS dengan predikat PUJIAN TINGGI (Cumlaude)"
+MASUKKAN pendapatan_bulanan, skor_kredit, tanggungan
+rasio_finansial = pendapatan_bulanan / (tanggungan + 1)
+JIKA skor_kredit >= 750 DAN rasio_finansial >= 5000000 MAKA
+    TAMPILKAN "Status: Pengajuan Pinjaman DISETUJUI (Bunga Rendah)"
 LAINNYA
-    TAMPILKAN "Mohon maaf, Anda wajib mengikuti ujian perbaikan semester depan"
+    TAMPILKAN "Status: Pengajuan Pinjaman DITOLAK atau Perlu Review Manual"
 AKHIR-JIKA
-SELESAI DENGAN SUKSES`,
+SELESAI`,
   },
 ];

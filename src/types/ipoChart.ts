@@ -28,6 +28,10 @@ export interface IpoConnection {
   targetFunctionId: string;
   targetInputId: string;
   label?: string;
+  color?: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  labelPosition?: number;
 }
 
 export interface IpoProjectData {

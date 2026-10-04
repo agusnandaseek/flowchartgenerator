@@ -21,37 +21,49 @@ export function validateIpoProject(
     functionMap.set(fn.id, fn);
     const fnErrs: string[] = [];
 
+    const fnOutputs = Array.isArray(fn.outputs) ? fn.outputs : [];
+    const fnInputs = Array.isArray(fn.inputs) ? fn.inputs : [];
+    const fnProcesses = Array.isArray(fn.processes)
+      ? fn.processes
+      : Array.isArray((fn as unknown as { process: unknown[] }).process)
+      ? (fn as unknown as { process: unknown[] }).process
+      : [];
+
     const outIds = new Set<string>();
-    fn.outputs.forEach((o) => outIds.add(o.id));
+    fnOutputs.forEach((o) => {
+      if (o && o.id) outIds.add(o.id);
+    });
     outputMap.set(fn.id, outIds);
 
     const inIds = new Set<string>();
-    fn.inputs.forEach((i) => inIds.add(i.id));
+    fnInputs.forEach((i) => {
+      if (i && i.id) inIds.add(i.id);
+    });
     inputMap.set(fn.id, inIds);
 
     // Function name required
-    if (!fn.name.trim()) {
+    if (!fn.name || !fn.name.trim()) {
       const msg = 'Function name is required.';
       fnErrs.push(msg);
       errors.push({ type: 'function', id: fn.id, field: 'name', message: msg });
     }
 
     // At least one input
-    if (fn.inputs.length === 0) {
+    if (fnInputs.length === 0) {
       const msg = 'At least one input is required.';
       fnErrs.push(msg);
       errors.push({ type: 'function', id: fn.id, field: 'inputs', message: msg });
     }
 
     // At least one process
-    if (fn.processes.length === 0) {
+    if (fnProcesses.length === 0) {
       const msg = 'At least one process is required.';
       fnErrs.push(msg);
       errors.push({ type: 'function', id: fn.id, field: 'processes', message: msg });
     }
 
     // At least one output
-    if (fn.outputs.length === 0) {
+    if (fnOutputs.length === 0) {
       const msg = 'At least one output is required.';
       fnErrs.push(msg);
       errors.push({ type: 'function', id: fn.id, field: 'outputs', message: msg });

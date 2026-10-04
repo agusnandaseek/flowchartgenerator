@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   FolderOpen,
@@ -11,6 +11,9 @@ import {
   Check,
   Share2,
   Loader2,
+  Table2,
+  Network,
+  Workflow,
 } from 'lucide-react';
 import {
   getSavedProjects,
@@ -20,59 +23,92 @@ import {
   importProjectFromJSON,
   createCloudShare,
   type SavedProject,
+  type UniversalShareData,
+  type AppMode,
 } from '../utils/storage';
 import type { FlowDensity, FlowEdgeStyle } from '../utils/layout';
+import type { IpoFunction, IpoConnection } from '../types/ipoChart';
 
 interface ProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentCode: string;
+  activeMode: AppMode;
   projectName: string;
   onSetProjectName: (name: string) => void;
-  direction: 'TB' | 'LR';
+  // Flowchart data
+  currentCode?: string;
+  direction?: 'TB' | 'LR';
   density?: FlowDensity;
   edgeStyle?: FlowEdgeStyle;
   nodePositions?: Record<string, { x: number; y: number }>;
-  onLoadProject: (project: {
-    name: string;
-    code: string;
-    direction: 'TB' | 'LR';
-    density?: FlowDensity;
-    edgeStyle?: FlowEdgeStyle;
-    nodePositions?: Record<string, { x: number; y: number }>;
-  }) => void;
+  // Structure Chart data
+  structureCode?: string;
+  // IPO Chart data
+  ipoFunctions?: IpoFunction[];
+  ipoConnections?: IpoConnection[];
+  ipoNodePositions?: Record<string, { x: number; y: number }> | null;
+  // Universal Load Handler
+  onLoadUniversalProject: (project: UniversalShareData) => void;
 }
 
 export const ProjectModal: React.FC<ProjectModalProps> = ({
   isOpen,
   onClose,
-  currentCode,
+  activeMode,
   projectName,
   onSetProjectName,
-  direction,
-  density,
-  edgeStyle,
+  currentCode = '',
+  direction = 'TB',
+  density = 'compact',
+  edgeStyle = 'step',
   nodePositions,
-  onLoadProject,
+  structureCode = '',
+  ipoFunctions = [],
+  ipoConnections = [],
+  ipoNodePositions,
+  onLoadUniversalProject,
 }) => {
-  const [projects, setProjects] = useState<SavedProject[]>(() => getSavedProjects());
-  const [saveName, setSaveName] = useState<string>(projectName || 'Project Flowchart Baru');
+  const [projects, setProjects] = useState<SavedProject[]>([]);
+  const [saveName, setSaveName] = useState<string>(projectName || '');
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sync state whenever modal is opened or activeMode changes
+  useEffect(() => {
+    if (isOpen) {
+      setProjects(getSavedProjects(activeMode));
+      setSaveName(
+        projectName ||
+          (activeMode === 'ipo'
+            ? 'Proyek IPO Baru'
+            : activeMode === 'structure'
+            ? 'Proyek Structure Baru'
+            : 'Proyek Flowchart Baru')
+      );
+    }
+  }, [isOpen, activeMode, projectName]);
+
+  if (!isOpen) return null;
+
   const handleShareProject = async (p: SavedProject) => {
     setSharingId(p.id);
     try {
       const res = await createCloudShare({
+        mode: p.mode || activeMode,
         name: p.name,
         code: p.code,
         direction: p.direction,
         density: p.density,
         edgeStyle: p.edgeStyle,
         nodePositions: p.nodePositions,
+        structureCode: p.structureCode,
+        functions: p.functions,
+        connections: p.connections,
+        ipoNodePositions: p.ipoNodePositions,
       });
+
       try {
         await navigator.clipboard.writeText(res.url);
       } catch {
@@ -83,7 +119,8 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
         document.execCommand('copy');
         document.body.removeChild(input);
       }
-      setProjects(getSavedProjects());
+
+      setProjects(getSavedProjects(activeMode));
       setCopiedId(p.id);
       setTimeout(() => setCopiedId(null), 3000);
     } catch (err: unknown) {
@@ -94,46 +131,97 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!saveName.trim()) return;
 
-    const saved = saveProject(saveName, currentCode, direction, undefined, density, edgeStyle, nodePositions);
+    let saved: SavedProject;
+    if (activeMode === 'ipo') {
+      saved = saveProject(
+        saveName,
+        '',
+        'TB',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'ipo',
+        {
+          functions: ipoFunctions,
+          connections: ipoConnections,
+          ipoNodePositions: ipoNodePositions || undefined,
+        }
+      );
+    } else if (activeMode === 'structure') {
+      saved = saveProject(
+        saveName,
+        structureCode,
+        'TB',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'structure',
+        {
+          structureCode,
+        }
+      );
+    } else {
+      saved = saveProject(
+        saveName,
+        currentCode,
+        direction,
+        undefined,
+        density,
+        edgeStyle,
+        nodePositions,
+        'flowchart'
+      );
+    }
+
     onSetProjectName(saved.name);
-    setProjects(getSavedProjects());
+    setProjects(getSavedProjects(activeMode));
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   const handleDelete = (id: string, name: string) => {
     if (window.confirm(`Hapus proyek "${name}"?`)) {
-      const updated = deleteProject(id);
+      const updated = deleteProject(id, activeMode);
       setProjects(updated);
     }
   };
 
   const handleLoad = (p: SavedProject) => {
-    onLoadProject({
+    onLoadUniversalProject({
+      mode: p.mode || activeMode,
       name: p.name,
       code: p.code,
       direction: p.direction,
       density: p.density,
       edgeStyle: p.edgeStyle,
       nodePositions: p.nodePositions,
+      structureCode: p.structureCode,
+      functions: p.functions,
+      connections: p.connections,
+      ipoNodePositions: p.ipoNodePositions,
     });
     onClose();
   };
 
-  const handleExportJSON = () => {
+  const handleExportCurrentJSON = () => {
     exportProjectToJSON({
-      name: projectName || 'flowchart',
+      mode: activeMode,
+      name: projectName,
       code: currentCode,
       direction,
       density,
       edgeStyle,
       nodePositions,
+      structureCode,
+      functions: ipoFunctions,
+      connections: ipoConnections,
+      ipoNodePositions,
     });
   };
 
@@ -143,7 +231,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
 
     try {
       const imported = await importProjectFromJSON(file);
-      onLoadProject(imported);
+      onLoadUniversalProject(imported);
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Gagal mengimpor file';
@@ -156,29 +244,62 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full max-h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <FolderOpen className="w-4 h-4" />
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-2xs ${
+                activeMode === 'ipo'
+                  ? 'bg-emerald-600'
+                  : activeMode === 'structure'
+                  ? 'bg-blue-600'
+                  : 'bg-indigo-600'
+              }`}
+            >
+              {activeMode === 'ipo' ? (
+                <Table2 className="w-4 h-4" />
+              ) : activeMode === 'structure' ? (
+                <Network className="w-4 h-4" />
+              ) : (
+                <Workflow className="w-4 h-4" />
+              )}
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Manajemen Proyek & Berkas</h2>
-              <p className="text-[11px] text-slate-500">Simpan di browser lokal atau ekspor / impor berkas JSON</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900">Manajemen Proyek & Berkas</h2>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                    activeMode === 'ipo'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : activeMode === 'structure'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  }`}
+                >
+                  {activeMode === 'ipo'
+                    ? 'IPO Chart'
+                    : activeMode === 'structure'
+                    ? 'Structure Chart'
+                    : 'Flowchart'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Simpan di browser lokal atau ekspor / impor berkas format JSON
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-600">
+        <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-600">
           {/* Section 1: Save Current Project */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
@@ -188,7 +309,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               </span>
               {saveSuccess && (
                 <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> Berhasil disimpan!
+                  <Check className="w-3.5 h-3.5" /> Berhasil disimpan ke browser!
                 </span>
               )}
             </div>
@@ -203,7 +324,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               />
               <button
                 type="submit"
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 transition-colors shrink-0"
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer shadow-2xs"
               >
                 <Save className="w-3.5 h-3.5" />
                 Simpan
@@ -214,19 +335,19 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
           {/* Section 2: Export / Import JSON */}
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={handleExportJSON}
-              className="flex items-center justify-center gap-2 p-3 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl text-slate-800 font-medium transition-all group"
+              onClick={handleExportCurrentJSON}
+              className="flex items-center justify-center gap-2.5 p-3 bg-white hover:bg-indigo-50/50 border border-slate-200 hover:border-indigo-300 rounded-xl text-slate-800 font-medium transition-all group cursor-pointer shadow-2xs"
             >
               <Download className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
               <div className="text-left">
                 <div className="text-xs font-bold text-slate-900">Ekspor File JSON</div>
-                <div className="text-[10px] text-slate-400">Unduh .json pseudocode</div>
+                <div className="text-[10px] text-slate-400">Unduh .json {activeMode}</div>
               </div>
             </button>
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 p-3 bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl text-slate-800 font-medium transition-all group"
+              className="flex items-center justify-center gap-2.5 p-3 bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-300 rounded-xl text-slate-800 font-medium transition-all group cursor-pointer shadow-2xs"
             >
               <Upload className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
               <div className="text-left">
@@ -243,7 +364,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             />
           </div>
 
-          {/* Section 3: Saved Projects List */}
+          {/* Section 3: Saved Projects List for Active Mode */}
           <div>
             <div className="flex items-center justify-between mb-2.5">
               <span className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
@@ -255,8 +376,12 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             {projects.length === 0 ? (
               <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                 <FolderOpen className="w-8 h-8 mx-auto text-slate-300 mb-1.5" />
-                <p className="text-xs font-medium">Belum ada proyek yang disimpan secara lokal.</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Ketik nama di atas lalu klik "Simpan" untuk menyimpan.</p>
+                <p className="text-xs font-medium">
+                  Belum ada proyek {activeMode} yang disimpan secara lokal.
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Ketik nama di atas lalu klik "Simpan" untuk menyimpan secara otomatis.
+                </p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
@@ -268,7 +393,23 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                     hour: '2-digit',
                     minute: '2-digit',
                   });
-                  const lines = p.code.split('\n').filter((l) => l.trim().length > 0).length;
+
+                  let subtitleText = '';
+                  if (activeMode === 'ipo') {
+                    const fnCount = p.functions?.length || 0;
+                    const connCount = p.connections?.length || 0;
+                    subtitleText = `${fnCount} fungsi, ${connCount} relasi`;
+                  } else if (activeMode === 'structure') {
+                    const lines = (p.structureCode || p.code || '')
+                      .split('\n')
+                      .filter((l) => l.trim().length > 0).length;
+                    subtitleText = `${lines} baris modul`;
+                  } else {
+                    const lines = (p.code || '')
+                      .split('\n')
+                      .filter((l) => l.trim().length > 0).length;
+                    subtitleText = `${lines} baris pseudocode`;
+                  }
 
                   return (
                     <div
@@ -284,7 +425,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                           </span>
                           <span className="flex items-center gap-1">
                             <Code className="w-3 h-3" />
-                            {lines} baris
+                            {subtitleText}
                           </span>
                         </div>
                       </div>
@@ -292,14 +433,14 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => handleLoad(p)}
-                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors"
+                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
                         >
                           Buka
                         </button>
                         <button
                           onClick={() => handleShareProject(p)}
                           disabled={sharingId === p.id}
-                          className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium ${
+                          className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs font-medium cursor-pointer ${
                             copiedId === p.id
                               ? 'bg-emerald-50 text-emerald-600'
                               : 'hover:bg-indigo-50 text-slate-400 hover:text-indigo-600'
@@ -319,7 +460,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                         </button>
                         <button
                           onClick={() => handleDelete(p.id, p.name)}
-                          className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                           title="Hapus Proyek"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -337,7 +478,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
         <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg text-xs transition-colors"
+            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg text-xs transition-colors cursor-pointer"
           >
             Tutup
           </button>
