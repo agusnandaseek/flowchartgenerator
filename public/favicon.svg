@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- Rounded Yellow Card with Solid Black Neobrutalism Border -->
+  <rect
+    x="5"
+    y="5"
+    width="90"
+    height="90"
+    rx="15"
+    ry="15"
+    fill="#FFC93C"
+    stroke="#0A0A0A"
+    stroke-width="7"
+    stroke-linejoin="round"
+  />
+  <!-- Geometric Bold Black Letter "N" Path -->
+  <path
+    d="M 26 24 L 40 24 L 61 56 L 61 24 L 74 24 L 74 76 L 60 76 L 39 44 L 39 76 L 26 76 Z"
+    fill="#0A0A0A"
+  />
+</svg>
