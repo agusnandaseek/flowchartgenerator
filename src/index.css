@@ -67,3 +67,9 @@ input[type="search"],
   background: #94a3b8;
 }
 
+/* Prevent external cursor url() in computed styles during html-to-image PNG export */
+body.exporting-image,
+body.exporting-image * {
+  cursor: default !important;
+}
+

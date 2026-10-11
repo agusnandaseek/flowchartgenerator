@@ -532,40 +532,63 @@ const FlowchartPreviewContent = forwardRef<FlowchartPreviewRef, FlowchartPreview
           const translateX = Math.round(-minX + padding);
           const translateY = Math.round(-minY + padding);
 
-          const dataUrl = await toPng(viewportEl, {
-            backgroundColor: '#ffffff',
-            width: imageWidth,
-            height: imageHeight,
-            pixelRatio: 3, // Ultra-sharp 3x Retina resolution (300+ DPI equivalent)
-            filter: (domNode) => {
-              // Exclude panels, controls, or minimap if they happen to be inside
-              const classList = (domNode as HTMLElement)?.classList;
-              if (
-                classList?.contains('react-flow__panel') ||
-                classList?.contains('react-flow__controls') ||
-                classList?.contains('react-flow__minimap') ||
-                classList?.contains('react-flow__handle')
-              ) {
-                return false;
-              }
-              return true;
-            },
-            style: {
-              width: `${imageWidth}px`,
-              height: `${imageHeight}px`,
-              transform: `translate(${translateX}px, ${translateY}px) scale(1)`,
-              transformOrigin: 'top left',
-            },
-          });
+          document.body.classList.add('exporting-image');
+          let dataUrl: string | null = null;
+          let lastErr: unknown = null;
 
+          for (const ratio of [3, 2, 1]) {
+            try {
+              dataUrl = await toPng(viewportEl, {
+                backgroundColor: '#ffffff',
+                width: imageWidth,
+                height: imageHeight,
+                pixelRatio: ratio,
+                skipFonts: true,
+                imagePlaceholder:
+                  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+                filter: (domNode) => {
+                  const classList = (domNode as HTMLElement)?.classList;
+                  if (
+                    classList?.contains('react-flow__panel') ||
+                    classList?.contains('react-flow__controls') ||
+                    classList?.contains('react-flow__minimap') ||
+                    classList?.contains('react-flow__handle')
+                  ) {
+                    return false;
+                  }
+                  return true;
+                },
+                style: {
+                  width: `${imageWidth}px`,
+                  height: `${imageHeight}px`,
+                  transform: `translate(${translateX}px, ${translateY}px) scale(1)`,
+                  transformOrigin: 'top left',
+                },
+              });
+              if (dataUrl) break;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+
+          if (!dataUrl) throw lastErr || new Error('Gagal menghasilkan PNG');
+
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          const safeName = filename.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+          const safeName = filename.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').toLowerCase();
           a.download = `${safeName || 'flowchart'}-${Date.now()}.${format}`;
-          a.href = dataUrl;
+          a.href = blobUrl;
+          document.body.appendChild(a);
           a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
         } catch (err) {
           console.error('Gagal mengekspor diagram:', err);
           alert('Terjadi kesalahan saat memproses ekspor gambar.');
+        } finally {
+          document.body.classList.remove('exporting-image');
         }
       },
       [getNodes, getNodesBounds]

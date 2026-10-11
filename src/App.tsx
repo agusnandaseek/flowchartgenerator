@@ -461,8 +461,10 @@ export function App() {
       }
     } else {
       if (ipoPreviewRef.current) {
-        await ipoPreviewRef.current.exportAllCharts(`${ipoProjectName.toLowerCase().replace(/\s+/g, '_')}_ipo_charts`);
-        showToast('Berhasil mengekspor IPO Charts PNG!', 'success');
+        const ok = await ipoPreviewRef.current.exportCurrentView();
+        if (ok) {
+          showToast('Berhasil mengekspor IPO PNG!', 'success');
+        }
       }
     }
   };

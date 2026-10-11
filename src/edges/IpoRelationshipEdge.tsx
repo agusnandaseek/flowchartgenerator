@@ -115,6 +115,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
     targetY: alignedTargetY,
     targetPosition,
     borderRadius: 8,
+    offset: sourcePosition === targetPosition ? 44 : 20,
   });
 
   const effectiveT = dragT !== null ? dragT : initialPosition;

@@ -217,31 +217,56 @@ const StructureChartPreviewContent = forwardRef<
         const imageWidth = contentWidth + padding * 2;
         const imageHeight = contentHeight + padding * 2;
 
-        const dataUrl = await toPng(viewportEl, {
-          backgroundColor: '#ffffff',
-          width: imageWidth,
-          height: imageHeight,
-          pixelRatio: 3, // 300+ DPI Retina crispness
-          style: {
-            width: `${imageWidth}px`,
-            height: `${imageHeight}px`,
-            transform: `translate(${-minX + padding}px, ${-minY + padding}px) scale(1)`,
-            transformOrigin: 'top left',
-          },
-          filter: (domNode) => {
-            const classList = (domNode as HTMLElement)?.classList;
-            if (classList?.contains('react-flow__handle')) return false;
-            return true;
-          },
-        });
+        document.body.classList.add('exporting-image');
+        let dataUrl: string | null = null;
+        let lastErr: unknown = null;
 
+        for (const ratio of [3, 2, 1]) {
+          try {
+            dataUrl = await toPng(viewportEl, {
+              backgroundColor: '#ffffff',
+              width: imageWidth,
+              height: imageHeight,
+              pixelRatio: ratio,
+              skipFonts: true,
+              imagePlaceholder:
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+              style: {
+                width: `${imageWidth}px`,
+                height: `${imageHeight}px`,
+                transform: `translate(${Math.round(-minX + padding)}px, ${Math.round(-minY + padding)}px) scale(1)`,
+                transformOrigin: 'top left',
+              },
+              filter: (domNode) => {
+                const classList = (domNode as HTMLElement)?.classList;
+                if (classList?.contains('react-flow__handle')) return false;
+                return true;
+              },
+            });
+            if (dataUrl) break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+
+        if (!dataUrl) throw lastErr || new Error('Gagal menghasilkan PNG');
+
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const safeName = filename.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_') || 'structure_chart';
         const link = document.createElement('a');
-        link.download = `${filename}.png`;
-        link.href = dataUrl;
+        link.download = `${safeName}.png`;
+        link.href = blobUrl;
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
       } catch (err) {
         console.error('Failed to export structure chart PNG:', err);
         alert('Gagal mengekspor gambar. Silakan coba lagi.');
+      } finally {
+        document.body.classList.remove('exporting-image');
       }
     },
     [getNodes]

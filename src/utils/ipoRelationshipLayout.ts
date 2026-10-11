@@ -223,8 +223,51 @@ export function updateIpoEdgeHandles(
     const isVerticallyAligned = Math.abs(dx) <= 20 && Math.abs(dy) > 40;
     const isHorizontallyAligned = Math.abs(dy) <= 40 && Math.abs(dx) > 40;
 
-    // KASUS 0A: Sejajar Lurus Secara Vertikal (|dx| <= 20) -> Pasti garis lurus vertikal tanpa belokan
+    // Cek apakah ada node lain yang menghalangi jalur lurus vertikal antara source dan target
+    const hasVerticalObstacle =
+      isVerticallyAligned &&
+      nodes.some((other) => {
+        if (other.id === edge.source || other.id === edge.target) return false;
+        const otherCenterX = other.position.x + NODE_WIDTH / 2;
+        const otherCenterY = other.position.y + NODE_HEIGHT / 2;
+        const minY = Math.min(sourceCenterY, targetCenterY) + 30;
+        const maxY = Math.max(sourceCenterY, targetCenterY) - 30;
+        return (
+          Math.abs(otherCenterX - sourceCenterX) < NODE_WIDTH * 0.85 &&
+          otherCenterY > minY &&
+          otherCenterY < maxY
+        );
+      });
+
+    // Cek apakah ada node lain yang menghalangi jalur lurus horizontal antara source dan target
+    const hasHorizontalObstacle =
+      isHorizontallyAligned &&
+      nodes.some((other) => {
+        if (other.id === edge.source || other.id === edge.target) return false;
+        const otherCenterX = other.position.x + NODE_WIDTH / 2;
+        const otherCenterY = other.position.y + NODE_HEIGHT / 2;
+        const minX = Math.min(sourceCenterX, targetCenterX) + 30;
+        const maxX = Math.max(sourceCenterX, targetCenterX) - 30;
+        return (
+          Math.abs(otherCenterY - sourceCenterY) < NODE_HEIGHT * 0.85 &&
+          otherCenterX > minX &&
+          otherCenterX < maxX
+        );
+      });
+
+    // KASUS 0A: Sejajar Lurus Secara Vertikal (|dx| <= 20)
     if (isVerticallyAligned) {
+      if (hasVerticalObstacle) {
+        // Jika ada node penghalang di tengah, belokkan lewat samping kanan (turun) atau samping kiri (naik/feedback)
+        const bypassSide = dy < 0 ? 'left' : 'right';
+        const newSourceHandle = conn?.sourceHandle || `source-${bypassSide}`;
+        const newTargetHandle = conn?.targetHandle || `target-${bypassSide}`;
+        if (edge.sourceHandle !== newSourceHandle || edge.targetHandle !== newTargetHandle) {
+          return { ...edge, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
+        }
+        return edge;
+      }
+
       const slotSuffix =
         pairEdges.length >= 2 ? (pairIdx === 0 ? '-left' : '-right') : '';
       const newSourceHandle =
@@ -238,8 +281,18 @@ export function updateIpoEdgeHandles(
       return edge;
     }
 
-    // KASUS 0B: Sejajar Lurus Secara Horizontal (|dy| <= 40) -> Pasti garis lurus horizontal
+    // KASUS 0B: Sejajar Lurus Secara Horizontal (|dy| <= 40)
     if (isHorizontallyAligned) {
+      if (hasHorizontalObstacle) {
+        const bypassSide = dx > 0 ? 'bottom' : 'top';
+        const newSourceHandle = conn?.sourceHandle || `source-${bypassSide}`;
+        const newTargetHandle = conn?.targetHandle || `target-${bypassSide}`;
+        if (edge.sourceHandle !== newSourceHandle || edge.targetHandle !== newTargetHandle) {
+          return { ...edge, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
+        }
+        return edge;
+      }
+
       const slotSuffix =
         pairEdges.length >= 2 ? (pairIdx === 0 ? '-top' : '-bottom') : '';
       const newSourceHandle =

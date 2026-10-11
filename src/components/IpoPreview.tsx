@@ -33,10 +33,28 @@ import { IpoRelationshipEdge } from '../edges/IpoRelationshipEdge';
 import { getIpoRelationshipElements, updateIpoEdgeHandles } from '../utils/ipoRelationshipLayout';
 
 export interface IpoPreviewRef {
-  exportAllCharts: (filename?: string) => Promise<void>;
-  exportRelationships: (filename?: string) => Promise<void>;
+  exportCurrentView: () => Promise<boolean>;
+  exportAllCharts: (filename?: string) => Promise<boolean>;
+  exportRelationships: (filename?: string) => Promise<boolean>;
   resetPositions: () => void;
   getNodePositions: () => Record<string, { x: number; y: number }>;
+}
+
+const TRANSPARENT_PIXEL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+async function triggerPngDownload(dataUrl: string, rawFilename: string) {
+  const safeName = rawFilename.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_') || 'ipo_export';
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = `${safeName}.png`;
+  link.href = blobUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
 }
 
 interface IpoPreviewProps {
@@ -615,25 +633,38 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
 
     // Export All IPO Charts as a single consolidated vertical image
     const handleExportAllCharts = useCallback(
-      async (filename = `${projectName.toLowerCase().replace(/\s+/g, '_')}_ipo_charts`) => {
-        if (!tablesContainerRef.current) return;
+      async (filename = `${projectName.toLowerCase().replace(/\s+/g, '_')}_ipo_charts`): Promise<boolean> => {
+        if (!tablesContainerRef.current) return false;
         setIsExporting(true);
+        document.body.classList.add('exporting-image');
         try {
           const target = tablesContainerRef.current;
-          const dataUrl = await toPng(target, {
-            backgroundColor: '#ffffff',
-            pixelRatio: 3, // Retina 300+ DPI
-            cacheBust: true,
-          });
+          let dataUrl: string | null = null;
+          let lastErr: unknown = null;
 
-          const link = document.createElement('a');
-          link.download = `${filename}.png`;
-          link.href = dataUrl;
-          link.click();
+          for (const ratio of [3, 2, 1]) {
+            try {
+              dataUrl = await toPng(target, {
+                backgroundColor: '#ffffff',
+                pixelRatio: ratio,
+                skipFonts: true,
+                imagePlaceholder: TRANSPARENT_PIXEL,
+              });
+              if (dataUrl) break;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+
+          if (!dataUrl) throw lastErr || new Error('Gagal menghasilkan gambar PNG');
+          await triggerPngDownload(dataUrl, filename);
+          return true;
         } catch (err) {
           console.error('Failed to export IPO tables PNG:', err);
           alert('Gagal mengekspor IPO Charts ke PNG. Silakan coba lagi.');
+          return false;
         } finally {
+          document.body.classList.remove('exporting-image');
           setIsExporting(false);
         }
       },
@@ -642,22 +673,23 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
 
     // Export Function Relationships Diagram (Identical High-Res Bounding Box Calculation)
     const handleExportRelationships = useCallback(
-      async (filename = `${projectName.toLowerCase().replace(/\s+/g, '_')}_function_relationships`) => {
-        if (!diagramWrapperRef.current) return;
+      async (filename = `${projectName.toLowerCase().replace(/\s+/g, '_')}_function_relationships`): Promise<boolean> => {
+        if (!diagramWrapperRef.current) return false;
         setIsExporting(true);
+        document.body.classList.add('exporting-image');
         try {
           const viewportEl = diagramWrapperRef.current.querySelector(
             '.react-flow__viewport'
           ) as HTMLElement;
           if (!viewportEl) {
             alert('Diagram viewport belum siap.');
-            return;
+            return false;
           }
 
           const currentNodes = activeNodesRef.current || [];
           if (currentNodes.length === 0) {
             alert('Tidak ada node untuk diekspor.');
-            return;
+            return false;
           }
 
           let minX = Infinity;
@@ -668,8 +700,9 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
           currentNodes.forEach((node) => {
             const nx = node.position.x;
             const ny = node.position.y;
+            const isDb = (node.data as any)?.fn?.type === 'database';
             const nw = (node.measured?.width ?? 230) || 230;
-            const nh = (node.measured?.height ?? 120) || 120;
+            const nh = (node.measured?.height ?? (isDb ? 168 : 152)) || (isDb ? 168 : 152);
 
             minX = Math.min(minX, nx);
             minY = Math.min(minY, ny);
@@ -677,53 +710,99 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
             maxY = Math.max(maxY, ny + nh);
           });
 
-          // Add 50px padding
-          const padding = 50;
-          const contentWidth = Math.max(100, Math.ceil(maxX - minX));
-          const contentHeight = Math.max(100, Math.ceil(maxY - minY));
-          const imageWidth = contentWidth + padding * 2;
-          const imageHeight = contentHeight + padding * 2;
+          // Measure actual rendered DOM nodes inside viewportEl
+          const domNodes = viewportEl.querySelectorAll('.react-flow__node');
+          domNodes.forEach((dn) => {
+            const transform = (dn as HTMLElement).style.transform;
+            const match = transform.match(/translate(?:3d)?\(([-\d.]+)px,\s*([-\d.]+)px/);
+            if (match) {
+              const nx = parseFloat(match[1]);
+              const ny = parseFloat(match[2]);
+              const nw = (dn as HTMLElement).offsetWidth || 230;
+              const nh = (dn as HTMLElement).offsetHeight || 152;
+              minX = Math.min(minX, nx);
+              minY = Math.min(minY, ny);
+              maxX = Math.max(maxX, nx + nw);
+              maxY = Math.max(maxY, ny + nh);
+            }
+          });
 
-          // Ensure all SVG edge paths are strictly fill="none" so html-to-image won't render black fills
+          // Include all SVG edge paths (so side-routed bypass lines are never clipped)
           const allEdgePaths = viewportEl.querySelectorAll<SVGPathElement>('.react-flow__edge-path');
           allEdgePaths.forEach((p) => {
             p.setAttribute('fill', 'none');
             p.style.fill = 'none';
+            try {
+              const bbox = p.getBBox();
+              if (bbox.width > 0 || bbox.height > 0) {
+                minX = Math.min(minX, bbox.x);
+                minY = Math.min(minY, bbox.y);
+                maxX = Math.max(maxX, bbox.x + bbox.width);
+                maxY = Math.max(maxY, bbox.y + bbox.height);
+              }
+            } catch {}
           });
 
-          const dataUrl = await toPng(viewportEl, {
-            backgroundColor: '#ffffff',
-            width: imageWidth,
-            height: imageHeight,
-            pixelRatio: 3, // 300+ DPI Retina crispness
-            style: {
-              width: `${imageWidth}px`,
-              height: `${imageHeight}px`,
-              transform: `translate(${-minX + padding}px, ${-minY + padding}px) scale(1)`,
-              transformOrigin: 'top left',
-            },
-            filter: (domNode) => {
-              const classList = (domNode as HTMLElement)?.classList;
-              if (classList?.contains('react-flow__handle')) return false;
-              return true;
-            },
-          });
+          const padding = 75;
+          const contentWidth = Math.max(120, Math.ceil(maxX - minX));
+          const contentHeight = Math.max(120, Math.ceil(maxY - minY));
+          const imageWidth = contentWidth + padding * 2;
+          const imageHeight = contentHeight + padding * 2;
 
-          const link = document.createElement('a');
-          link.download = `${filename}.png`;
-          link.href = dataUrl;
-          link.click();
+          let dataUrl: string | null = null;
+          let lastErr: unknown = null;
+
+          for (const ratio of [3, 2, 1]) {
+            try {
+              dataUrl = await toPng(viewportEl, {
+                backgroundColor: '#ffffff',
+                width: imageWidth,
+                height: imageHeight,
+                pixelRatio: ratio,
+                skipFonts: true,
+                imagePlaceholder: TRANSPARENT_PIXEL,
+                style: {
+                  width: `${imageWidth}px`,
+                  height: `${imageHeight}px`,
+                  transform: `translate(${Math.round(-minX + padding)}px, ${Math.round(-minY + padding)}px) scale(1)`,
+                  transformOrigin: 'top left',
+                },
+                filter: (domNode) => {
+                  const classList = (domNode as HTMLElement)?.classList;
+                  if (classList?.contains('react-flow__handle')) return false;
+                  return true;
+                },
+              });
+              if (dataUrl) break;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+
+          if (!dataUrl) throw lastErr || new Error('Gagal menghasilkan gambar diagram PNG');
+          await triggerPngDownload(dataUrl, filename);
+          return true;
         } catch (err) {
           console.error('Failed to export relationships diagram PNG:', err);
           alert('Gagal mengekspor diagram relasi. Silakan coba lagi.');
+          return false;
         } finally {
+          document.body.classList.remove('exporting-image');
           setIsExporting(false);
         }
       },
       [projectName]
     );
 
+    const handleExportCurrentView = useCallback(async (): Promise<boolean> => {
+      if (subMode === 'relationships') {
+        return handleExportRelationships();
+      }
+      return handleExportAllCharts();
+    }, [subMode, handleExportRelationships, handleExportAllCharts]);
+
     useImperativeHandle(ref, () => ({
+      exportCurrentView: handleExportCurrentView,
       exportAllCharts: handleExportAllCharts,
       exportRelationships: handleExportRelationships,
       resetPositions: () => resetPositionsCallbackRef.current(),
