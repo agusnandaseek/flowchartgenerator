@@ -16,6 +16,8 @@ export interface IpoOutput {
 export interface IpoFunction {
   id: string;
   name: string;
+  role?: string;
+  type?: 'function' | 'database';
   inputs: IpoInput[];
   processes: IpoProcess[];
   outputs: IpoOutput[];
@@ -29,6 +31,7 @@ export interface IpoConnection {
   targetInputId: string;
   label?: string;
   color?: string;
+  lineStyle?: 'solid' | 'dashed';
   sourceHandle?: string;
   targetHandle?: string;
   labelPosition?: number;

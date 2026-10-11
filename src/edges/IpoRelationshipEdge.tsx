@@ -10,13 +10,14 @@ import { GripVertical } from 'lucide-react';
 export interface IpoRelationshipEdgeData {
   connectionId: string;
   color?: string;
+  lineStyle?: 'solid' | 'dashed';
   sourceOutputId?: string;
   targetInputId?: string;
   sourceHandle?: string;
   targetHandle?: string;
   labelPosition?: number;
   label?: string;
-  onUpdateConnection?: (connId: string, updates: { labelPosition?: number; color?: string; label?: string }) => void;
+  onUpdateConnection?: (connId: string, updates: { labelPosition?: number; color?: string; label?: string; lineStyle?: 'solid' | 'dashed' }) => void;
   onSelectEdge?: (edgeId: string) => void;
 }
 
@@ -94,12 +95,24 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
 
   const { screenToFlowPosition } = useReactFlow();
 
+  const isVerticalEdge =
+    (sourcePosition === 'top' || sourcePosition === 'bottom') &&
+    (targetPosition === 'top' || targetPosition === 'bottom');
+  const isHorizontalEdge =
+    (sourcePosition === 'left' || sourcePosition === 'right') &&
+    (targetPosition === 'left' || targetPosition === 'right');
+
+  const alignedTargetX =
+    isVerticalEdge && Math.abs(sourceX - targetX) <= 10 ? sourceX : targetX;
+  const alignedTargetY =
+    isHorizontalEdge && Math.abs(sourceY - targetY) <= 10 ? sourceY : targetY;
+
   const [edgePath, defaultLabelX, defaultLabelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
-    targetX,
-    targetY,
+    targetX: alignedTargetX,
+    targetY: alignedTargetY,
     targetPosition,
     borderRadius: 8,
   });
@@ -199,6 +212,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
           fill: 'none',
           stroke: edgeColor,
           strokeWidth: selected ? 3.5 : 2,
+          strokeDasharray: edgeData?.lineStyle === 'dashed' ? '6 4' : undefined,
           filter: selected ? `drop-shadow(0 0 6px ${edgeColor}90)` : undefined,
           ...style,
         }}

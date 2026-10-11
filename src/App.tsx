@@ -186,7 +186,7 @@ export function App() {
           setIpoProjectName(remoteData.name);
           if (remoteData.functions) setIpoFunctions(remoteData.functions);
           if (remoteData.connections) setIpoConnections(remoteData.connections);
-          if (remoteData.ipoNodePositions) setIpoNodePositions(remoteData.ipoNodePositions);
+          setIpoNodePositions(remoteData.ipoNodePositions || null);
           showToast(`Proyek IPO Chart "${remoteData.name}" berhasil dimuat!`, 'success');
         } else {
           setActiveMode('flowchart');
@@ -195,7 +195,7 @@ export function App() {
           setDirection(remoteData.direction || 'TB');
           if (remoteData.density) setDensity(remoteData.density);
           if (remoteData.edgeStyle) setEdgeStyle(remoteData.edgeStyle);
-          if (remoteData.nodePositions) setCustomNodePositions(remoteData.nodePositions);
+          setCustomNodePositions(remoteData.nodePositions || null);
           showToast(`Proyek Flowchart "${remoteData.name}" berhasil dimuat!`, 'success');
         }
       }
@@ -264,9 +264,7 @@ export function App() {
               if (remoteData.connections) {
                 setIpoConnections(remoteData.connections);
               }
-              if (remoteData.ipoNodePositions) {
-                setIpoNodePositions(remoteData.ipoNodePositions);
-              }
+              setIpoNodePositions(remoteData.ipoNodePositions || null);
               showToast(`Proyek IPO Chart "${remoteData.name}" berhasil dimuat dari cloud!`, 'success');
             } else {
               setActiveMode('flowchart');
@@ -277,7 +275,7 @@ export function App() {
               setDirection(remoteData.direction || 'TB');
               if (remoteData.density) setDensity(remoteData.density);
               if (remoteData.edgeStyle) setEdgeStyle(remoteData.edgeStyle);
-              if (remoteData.nodePositions) setCustomNodePositions(remoteData.nodePositions);
+              setCustomNodePositions(remoteData.nodePositions || null);
               showToast(`Proyek Flowchart "${remoteData.name}" berhasil dimuat dari cloud!`, 'success');
             }
 
@@ -489,12 +487,13 @@ export function App() {
         structureCode,
       });
     } else {
+      const liveIpoPositions = ipoPreviewRef.current?.getNodePositions() || ipoNodePositions;
       exportProjectToJSON({
         mode: 'ipo',
         name: ipoProjectName,
         functions: ipoFunctions,
         connections: ipoConnections,
-        ipoNodePositions,
+        ipoNodePositions: liveIpoPositions,
       });
     }
   };
@@ -512,7 +511,7 @@ export function App() {
       setIpoProjectName(p.name);
       if (p.functions) setIpoFunctions(p.functions);
       if (p.connections) setIpoConnections(p.connections);
-      if (p.ipoNodePositions) setIpoNodePositions(p.ipoNodePositions);
+      setIpoNodePositions(p.ipoNodePositions || null);
       showToast(`Proyek IPO Chart "${p.name}" berhasil dimuat!`, 'success');
     } else {
       setActiveMode('flowchart');
@@ -521,7 +520,7 @@ export function App() {
       if (p.direction) setDirection(p.direction);
       if (p.density) setDensity(p.density);
       if (p.edgeStyle) setEdgeStyle(p.edgeStyle);
-      if (p.nodePositions) setCustomNodePositions(p.nodePositions);
+      setCustomNodePositions(p.nodePositions || null);
       showToast(`Proyek Flowchart "${p.name}" berhasil dimuat!`, 'success');
     }
     setIsProjectModalOpen(false);
@@ -539,12 +538,13 @@ export function App() {
           structureCode,
         };
       } else if (activeMode === 'ipo') {
+        const liveIpoPositions = ipoPreviewRef.current?.getNodePositions() || ipoNodePositions;
         sharePayload = {
           mode: 'ipo' as const,
           name: ipoProjectName,
           functions: ipoFunctions,
           connections: ipoConnections,
-          ipoNodePositions: ipoNodePositions || undefined,
+          ipoNodePositions: liveIpoPositions || undefined,
         };
       } else {
         const livePositions = previewRef.current?.getNodePositions() || customNodePositions || {};
@@ -770,7 +770,7 @@ export function App() {
         structureCode={structureCode}
         ipoFunctions={ipoFunctions}
         ipoConnections={ipoConnections}
-        ipoNodePositions={ipoNodePositions}
+        ipoNodePositions={ipoPreviewRef.current?.getNodePositions() || ipoNodePositions}
         onLoadUniversalProject={handleLoadUniversalProject}
       />
 

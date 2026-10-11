@@ -1,5 +1,29 @@
 {
   "framework": "vite",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "flowchart.nandacreative.my.id"
+        }
+      ],
+      "destination": "https://flowchart.bynanda.my.id/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.flowchart.nandacreative.my.id"
+        }
+      ],
+      "destination": "https://flowchart.bynanda.my.id/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

@@ -7,6 +7,8 @@ import {
   ChevronDown,
   AlertTriangle,
   Layers,
+  Database,
+  User,
   ArrowRight,
   Link2,
   RefreshCw,
@@ -48,16 +50,30 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
   // Validate state
   const { functionErrors, connectionErrors } = validateIpoProject(functions, connections);
 
-  // --- FUNCTION MANAGEMENT ---
+  // --- FUNCTION & DATABASE MANAGEMENT ---
   const handleAddFunction = () => {
     const newFn: IpoFunction = {
       id: generateId('fn'),
       name: '',
+      role: '',
+      type: 'function',
       inputs: [],
       processes: [],
       outputs: [],
     };
     onChangeFunctions([...functions, newFn]);
+  };
+
+  const handleAddDatabase = () => {
+    const newDb: IpoFunction = {
+      id: generateId('db'),
+      name: '',
+      type: 'database',
+      inputs: [],
+      processes: [],
+      outputs: [],
+    };
+    onChangeFunctions([...functions, newDb]);
   };
 
   const handleUpdateFunctionName = (fnId: string, name: string) => {
@@ -66,10 +82,18 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
     );
   };
 
+  const handleUpdateFunctionRole = (fnId: string, role: string) => {
+    onChangeFunctions(
+      functions.map((fn) => (fn.id === fnId ? { ...fn, role } : fn))
+    );
+  };
+
   const handleDeleteFunction = (fnId: string) => {
-    if (!window.confirm('Apakah Anda yakin ingin menghapus function ini?')) return;
+    const target = functions.find((f) => f.id === fnId);
+    const label = target?.type === 'database' ? 'blok database' : 'function';
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus ${label} ini?`)) return;
     onChangeFunctions(functions.filter((fn) => fn.id !== fnId));
-    // Clean up connections referencing this function
+    // Clean up connections referencing this function/database
     onChangeConnections(
       connections.filter(
         (c) => c.sourceFunctionId !== fnId && c.targetFunctionId !== fnId
@@ -82,8 +106,10 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
     if (!fnToDup) return;
 
     const duplicatedFn: IpoFunction = {
-      id: generateId('fn'),
+      id: generateId(fnToDup.type === 'database' ? 'db' : 'fn'),
       name: `${fnToDup.name}Copy`,
+      role: fnToDup.role,
+      type: fnToDup.type,
       inputs: fnToDup.inputs.map((inp) => ({ id: generateId('in'), name: inp.name })),
       processes: fnToDup.processes.map((pr) => ({ id: generateId('pr'), description: pr.description })),
       outputs: fnToDup.outputs.map((out) => ({ id: generateId('out'), name: out.name })),
@@ -254,7 +280,7 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
   // --- CONNECTION MANAGEMENT ---
   const handleAddConnection = () => {
     if (functions.length < 2) {
-      alert('Dibutuhkan minimal 2 function untuk membuat connection.');
+      alert('Dibutuhkan minimal 2 blok (Function / Database) untuk membuat connection.');
       return;
     }
     const srcFn = functions[0];
@@ -262,10 +288,11 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
     const newConn: IpoConnection = {
       id: generateId('conn'),
       sourceFunctionId: srcFn.id,
-      sourceOutputId: srcFn.outputs[0]?.id || '',
+      sourceOutputId: srcFn.type === 'database' ? '' : srcFn.outputs[0]?.id || '__direct__',
       targetFunctionId: tgtFn.id,
-      targetInputId: tgtFn.inputs[0]?.id || '',
+      targetInputId: tgtFn.type === 'database' ? '' : tgtFn.inputs[0]?.id || '__direct__',
       label: '',
+      lineStyle: 'solid',
     };
     onChangeConnections([...connections, newConn]);
   };
@@ -296,7 +323,7 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
               }`}
             >
               <Layers className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Functions ({functions.length})</span>
+              <span>Blocks ({functions.length})</span>
             </button>
 
             <button
@@ -318,19 +345,29 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
           {/* Action buttons */}
           <div className="flex items-center gap-1.5">
             {activeTab === 'functions' ? (
-              <button
-                onClick={handleAddFunction}
-                className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-                title="Tambahkan function baru ke IPO chart"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Function</span>
-              </button>
+              <>
+                <button
+                  onClick={handleAddFunction}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  title="Tambahkan function baru ke IPO chart"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Function</span>
+                </button>
+                <button
+                  onClick={handleAddDatabase}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  title="Tambahkan blok Database (Silinder) untuk relasi data antar-function"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>+ Database</span>
+                </button>
+              </>
             ) : (
               <button
                 onClick={handleAddConnection}
                 className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
-                title="Tambahkan hubungan relasi antar-function"
+                title="Tambahkan hubungan relasi antar-function / database"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Connection</span>
@@ -382,27 +419,121 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
 
       {/* Main Scrollable Body */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3.5 min-h-0">
-        {/* TAB 1: FUNCTIONS BUILDER */}
+        {/* TAB 1: FUNCTIONS & DATABASES BUILDER */}
         {activeTab === 'functions' && (
           <>
             {functions.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-xl border border-dashed border-slate-300">
                 <Layers className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <h4 className="text-xs font-bold text-slate-700 mb-1">Belum Ada Function</h4>
+                <h4 className="text-xs font-bold text-slate-700 mb-1">Belum Ada Function / Database</h4>
                 <p className="text-[11px] text-slate-500 mb-3">
-                  Klik tombol di bawah untuk membuat Function Card pertama Anda.
+                  Klik tombol di bawah untuk membuat Function Card atau Blok Database pertama Anda.
                 </p>
-                <button
-                  onClick={handleAddFunction}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Add Function</span>
-                </button>
+                <div className="inline-flex items-center gap-2">
+                  <button
+                    onClick={handleAddFunction}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Function</span>
+                  </button>
+                  <button
+                    onClick={handleAddDatabase}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    <span>+ Add Database</span>
+                  </button>
+                </div>
               </div>
             ) : (
               functions.map((fn, fnIdx) => {
                 const fnErrs = functionErrors[fn.id] || [];
+
+                if (fn.type === 'database') {
+                  const dbConns = connections.filter(
+                    (c) => c.sourceFunctionId === fn.id || c.targetFunctionId === fn.id
+                  );
+                  return (
+                    <div
+                      key={fn.id}
+                      className="bg-white rounded-xl border-2 border-purple-200 shadow-2xs overflow-hidden transition-all hover:border-purple-300"
+                    >
+                      <div className="p-2.5 bg-purple-50/70 border-b border-purple-100 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="px-1.5 h-5 rounded bg-purple-600 text-white font-mono text-[10px] font-bold flex items-center gap-1 shrink-0">
+                            <Database className="w-3 h-3" />
+                            DB
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={fn.name}
+                              onChange={(e) => handleUpdateFunctionName(fn.id, e.target.value)}
+                              placeholder="Database Name (e.g. Reservation Records)"
+                              className="w-full bg-white border border-purple-300 focus:border-purple-600 focus:ring-1 focus:ring-purple-200 rounded px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleMoveFunction(fnIdx, 'up')}
+                            disabled={fnIdx === 0}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                            title="Geser ke atas"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMoveFunction(fnIdx, 'down')}
+                            disabled={fnIdx === functions.length - 1}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 cursor-pointer"
+                            title="Geser ke bawah"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateFunction(fn.id)}
+                            className="p-1 text-slate-400 hover:text-purple-600 transition-colors cursor-pointer"
+                            title="Duplikasi Database"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFunction(fn.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Hapus Database"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="px-3 py-2 bg-white flex items-center justify-between text-[11px] text-slate-500">
+                        <span>
+                          Silinder Database untuk menghubungkan penyimpanan / pembacaan data antar-fungsi.
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold border border-purple-200 shrink-0 ml-2">
+                          {dbConns.length} Relasi
+                        </span>
+                      </div>
+
+                      {fnErrs.length > 0 && (
+                        <div className="px-3 pb-2.5">
+                          <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 space-y-0.5">
+                            {fnErrs.map((err, i) => (
+                              <div key={i} className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>{err}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
 
                 return (
                   <div
@@ -410,54 +541,71 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                     className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition-all hover:border-slate-300"
                   >
                     {/* Function Card Header */}
-                    <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                        <span className="w-5 h-5 rounded bg-indigo-100 text-indigo-700 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
-                          {fnIdx + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <input
-                            type="text"
-                            value={fn.name}
-                            onChange={(e) => handleUpdateFunctionName(fn.id, e.target.value)}
-                            placeholder="Function Name (e.g. calculateItemTotal)"
-                            className="w-full bg-white border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 rounded px-2 py-1 text-xs font-mono font-bold text-slate-800 outline-none"
-                          />
+                    <div className="p-2.5 bg-slate-50 border-b border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="w-5 h-5 rounded bg-indigo-100 text-indigo-700 font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
+                            {fnIdx + 1}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <input
+                              type="text"
+                              value={fn.name}
+                              onChange={(e) => handleUpdateFunctionName(fn.id, e.target.value)}
+                              placeholder="Function Name (e.g. calculateItemTotal)"
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 rounded px-2 py-1 text-xs font-mono font-bold text-slate-800 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Header Actions */}
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleMoveFunction(fnIdx, 'up')}
+                            disabled={fnIdx === 0}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer"
+                            title="Geser fungsi ke atas"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMoveFunction(fnIdx, 'down')}
+                            disabled={fnIdx === functions.length - 1}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer"
+                            title="Geser fungsi ke bawah"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDuplicateFunction(fn.id)}
+                            className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title="Duplikasi Function"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFunction(fn.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Hapus Function"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      {/* Header Actions */}
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          onClick={() => handleMoveFunction(fnIdx, 'up')}
-                          disabled={fnIdx === 0}
-                          className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer"
-                          title="Geser fungsi ke atas"
-                        >
-                          <ChevronUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleMoveFunction(fnIdx, 'down')}
-                          disabled={fnIdx === functions.length - 1}
-                          className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer"
-                          title="Geser fungsi ke bawah"
-                        >
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDuplicateFunction(fn.id)}
-                          className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                          title="Duplikasi Function"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteFunction(fn.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                          title="Hapus Function"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      {/* Optional Role Input */}
+                      <div className="flex items-center gap-1.5 pl-6">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
+                          <User className="w-3 h-3 text-amber-600" />
+                          <span>Role</span>
+                        </span>
+                        <input
+                          type="text"
+                          value={fn.role || ''}
+                          onChange={(e) => handleUpdateFunctionRole(fn.id, e.target.value)}
+                          placeholder="Label Role / Aktor (Opsional, misal: Admin, Guest, Receptionist)"
+                          className="flex-1 bg-white border border-slate-200 focus:border-amber-500 focus:ring-1 focus:ring-amber-200 rounded px-2 py-0.5 text-[11px] text-slate-700 outline-none"
+                        />
                       </div>
                     </div>
 
@@ -686,6 +834,13 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
               connections.map((conn, connIdx) => {
                 const srcFn = functions.find((f) => f.id === conn.sourceFunctionId);
                 const tgtFn = functions.find((f) => f.id === conn.targetFunctionId);
+                const srcOut = srcFn?.outputs.find((o) => o.id === conn.sourceOutputId);
+                const tgtIn = tgtFn?.inputs.find((i) => i.id === conn.targetInputId);
+                const relationTitle =
+                  conn.label?.trim() ||
+                  srcOut?.name?.trim() ||
+                  tgtIn?.name?.trim() ||
+                  `Connection #${connIdx + 1}`;
                 const isInvalid = !!connectionErrors[conn.id];
 
                 return (
@@ -696,16 +851,19 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                     }`}
                   >
                     {/* Header */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-mono text-[10px] flex items-center justify-center font-bold">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-w-0"
+                        title={relationTitle}
+                      >
+                        <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-mono text-[10px] flex items-center justify-center font-bold shrink-0">
                           {connIdx + 1}
                         </span>
-                        Connection #{connIdx + 1}
+                        <span className="truncate font-mono">{relationTitle}</span>
                       </span>
                       <button
                         onClick={() => handleDeleteConnection(conn.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                        className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
                         title="Hapus connection"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -723,7 +881,7 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                     {/* Source Selector */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
-                        Source Function & Output:
+                        Source Block & Output:
                       </label>
                       <div className="grid grid-cols-2 gap-1.5">
                         <select
@@ -733,33 +891,47 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                             const newSrcFn = functions.find((f) => f.id === newSrcId);
                             handleUpdateConnection(conn.id, {
                               sourceFunctionId: newSrcId,
-                              sourceOutputId: newSrcFn?.outputs[0]?.id || '',
+                              sourceOutputId:
+                                newSrcFn?.type === 'database'
+                                  ? ''
+                                  : newSrcFn?.outputs[0]?.id || '__direct__',
                             });
                           }}
                           className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
                         >
-                          <option value="">-- Pilih Function --</option>
+                          <option value="">-- Pilih Source --</option>
                           {functions.map((fn) => (
                             <option key={fn.id} value={fn.id}>
-                              {fn.name ? `${fn.name}()` : '(untitled)'}
+                              {fn.type === 'database'
+                                ? `🗄️ [DB] ${fn.name || '(untitled db)'}`
+                                : fn.name
+                                ? `${fn.name}()`
+                                : '(untitled)'}
                             </option>
                           ))}
                         </select>
 
-                        <select
-                          value={conn.sourceOutputId}
-                          onChange={(e) =>
-                            handleUpdateConnection(conn.id, { sourceOutputId: e.target.value })
-                          }
-                          className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
-                        >
-                          <option value="">-- Pilih Output --</option>
-                          {srcFn?.outputs.map((out) => (
-                            <option key={out.id} value={out.id}>
-                              {out.name || '(unnamed)'}
-                            </option>
-                          ))}
-                        </select>
+                        {srcFn?.type === 'database' ? (
+                          <div className="w-full bg-purple-50 border border-purple-200 rounded px-2 py-1 text-[11px] font-semibold text-purple-700 flex items-center gap-1 truncate">
+                            <Database className="w-3 h-3 shrink-0" />
+                            <span className="truncate">Read from Database</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={conn.sourceOutputId || '__direct__'}
+                            onChange={(e) =>
+                              handleUpdateConnection(conn.id, { sourceOutputId: e.target.value })
+                            }
+                            className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                          >
+                            <option value="__direct__">-- Langsung (Tanpa Pin) --</option>
+                            {srcFn?.outputs.map((out) => (
+                              <option key={out.id} value={out.id}>
+                                {out.name || '(unnamed)'}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     </div>
 
@@ -770,7 +942,7 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                     {/* Target Selector */}
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
-                        Target Function & Input:
+                        Target Block & Input:
                       </label>
                       <div className="grid grid-cols-2 gap-1.5">
                         <select
@@ -780,50 +952,83 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                             const newTgtFn = functions.find((f) => f.id === newTgtId);
                             handleUpdateConnection(conn.id, {
                               targetFunctionId: newTgtId,
-                              targetInputId: newTgtFn?.inputs[0]?.id || '',
+                              targetInputId:
+                                newTgtFn?.type === 'database'
+                                  ? ''
+                                  : newTgtFn?.inputs[0]?.id || '__direct__',
                             });
                           }}
                           className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
                         >
-                          <option value="">-- Pilih Function --</option>
+                          <option value="">-- Pilih Target --</option>
                           {functions.map((fn) => (
                             <option key={fn.id} value={fn.id}>
-                              {fn.name ? `${fn.name}()` : '(untitled)'}
+                              {fn.type === 'database'
+                                ? `🗄️ [DB] ${fn.name || '(untitled db)'}`
+                                : fn.name
+                                ? `${fn.name}()`
+                                : '(untitled)'}
                             </option>
                           ))}
                         </select>
 
-                        <select
-                          value={conn.targetInputId}
-                          onChange={(e) =>
-                            handleUpdateConnection(conn.id, { targetInputId: e.target.value })
-                          }
-                          className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
-                        >
-                          <option value="">-- Pilih Input --</option>
-                          {tgtFn?.inputs.map((inp) => (
-                            <option key={inp.id} value={inp.id}>
-                              {inp.name || '(unnamed)'}
-                            </option>
-                          ))}
-                        </select>
+                        {tgtFn?.type === 'database' ? (
+                          <div className="w-full bg-purple-50 border border-purple-200 rounded px-2 py-1 text-[11px] font-semibold text-purple-700 flex items-center gap-1 truncate">
+                            <Database className="w-3 h-3 shrink-0" />
+                            <span className="truncate">Save to Database</span>
+                          </div>
+                        ) : (
+                          <select
+                            value={conn.targetInputId || '__direct__'}
+                            onChange={(e) =>
+                              handleUpdateConnection(conn.id, { targetInputId: e.target.value })
+                            }
+                            className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono text-slate-800 outline-none"
+                          >
+                            <option value="__direct__">-- Langsung (Tanpa Pin) --</option>
+                            {tgtFn?.inputs.map((inp) => (
+                              <option key={inp.id} value={inp.id}>
+                                {inp.name || '(unnamed)'}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     </div>
 
-                    {/* Optional Label */}
-                    <div className="pt-1">
-                      <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-0.5">
-                        Label (Opsional):
-                      </label>
-                      <input
-                        type="text"
-                        value={conn.label || ''}
-                        onChange={(e) =>
-                          handleUpdateConnection(conn.id, { label: e.target.value })
-                        }
-                        placeholder="Contoh: itemTotal, discountedTotal"
-                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 outline-none"
-                      />
+                    {/* Optional Label & Line Style */}
+                    <div className="pt-1 grid grid-cols-3 gap-1.5">
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-0.5">
+                          Label (Opsional):
+                        </label>
+                        <input
+                          type="text"
+                          value={conn.label || ''}
+                          onChange={(e) =>
+                            handleUpdateConnection(conn.id, { label: e.target.value })
+                          }
+                          placeholder="Contoh: reservationData, bookingSlip"
+                          className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-0.5">
+                          Gaya Garis:
+                        </label>
+                        <select
+                          value={conn.lineStyle || 'solid'}
+                          onChange={(e) =>
+                            handleUpdateConnection(conn.id, {
+                              lineStyle: e.target.value as 'solid' | 'dashed',
+                            })
+                          }
+                          className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs text-slate-800 outline-none cursor-pointer"
+                        >
+                          <option value="solid">Solid (───)</option>
+                          <option value="dashed">Dashed (---)</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 );

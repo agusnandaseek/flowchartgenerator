@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Palette,
   Trash2,
+  User,
   X,
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
@@ -35,6 +36,7 @@ export interface IpoPreviewRef {
   exportAllCharts: (filename?: string) => Promise<void>;
   exportRelationships: (filename?: string) => Promise<void>;
   resetPositions: () => void;
+  getNodePositions: () => Record<string, { x: number; y: number }>;
 }
 
 interface IpoPreviewProps {
@@ -125,69 +127,86 @@ const IpoRelationshipsDiagram: React.FC<{
     }
   }, [functions.length, fitView]);
 
-  // Magnetic Snapping on Drag
+  const getSnappedPosition = useCallback(
+    (nodeId: string, rawPos: { x: number; y: number }, currentNodes: Node[]) => {
+      const SNAP_THRESHOLD = 14;
+      const draggedNode = currentNodes.find((n) => n.id === nodeId);
+      const nodeW = draggedNode?.measured?.width ?? 230;
+      const nodeH = draggedNode?.measured?.height ?? 120;
+      const proposedCenterX = rawPos.x + nodeW / 2;
+      const proposedCenterY = rawPos.y + nodeH / 2;
+
+      let snappedX = Math.round(rawPos.x);
+      let snappedY = Math.round(rawPos.y);
+      let minDx = SNAP_THRESHOLD + 1;
+      let minDy = SNAP_THRESHOLD + 1;
+
+      for (const other of currentNodes) {
+        if (other.id === nodeId) continue;
+        const otherW = other.measured?.width ?? 230;
+        const otherH = other.measured?.height ?? 120;
+        const otherCenterX = other.position.x + otherW / 2;
+        const otherCenterY = other.position.y + otherH / 2;
+
+        const dx = Math.abs(proposedCenterX - otherCenterX);
+        if (dx <= SNAP_THRESHOLD && dx < minDx) {
+          minDx = dx;
+          snappedX = Math.round(otherCenterX - nodeW / 2);
+        }
+
+        const dy = Math.abs(proposedCenterY - otherCenterY);
+        if (dy <= SNAP_THRESHOLD && dy < minDy) {
+          minDy = dy;
+          snappedY = Math.round(otherCenterY - nodeH / 2);
+        }
+      }
+
+      return { x: snappedX, y: snappedY };
+    },
+    []
+  );
+
+  // Magnetic Snapping on Drag & Drag Release
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node>[]) => {
-      const SNAP_THRESHOLD = 15;
-
       const adjustedChanges = changes.map((change) => {
-        if (change.type === 'position' && change.position && change.dragging) {
-          const draggedNode = nodes.find((n) => n.id === change.id);
-          if (draggedNode) {
-            const nodeW = 230;
-            const nodeH = 120;
-            const proposedCenterX = change.position.x + nodeW / 2;
-            const proposedCenterY = change.position.y + nodeH / 2;
-
-            const otherNodes = nodes.filter((n) => n.id !== change.id);
-
-            let snappedX = change.position.x;
-            let snappedY = change.position.y;
-
-            // Snap X to align centers vertically
-            for (const other of otherNodes) {
-              const otherCenterX = other.position.x + nodeW / 2;
-              if (Math.abs(proposedCenterX - otherCenterX) <= SNAP_THRESHOLD) {
-                snappedX = Math.round(otherCenterX - nodeW / 2);
-                break;
-              }
-            }
-
-            // Snap Y to align centers horizontally
-            for (const other of otherNodes) {
-              const otherCenterY = other.position.y + nodeH / 2;
-              if (Math.abs(proposedCenterY - otherCenterY) <= SNAP_THRESHOLD) {
-                snappedY = Math.round(otherCenterY - nodeH / 2);
-                break;
-              }
-            }
-
-            return {
-              ...change,
-              position: { x: snappedX, y: snappedY },
-            };
-          }
+        if (change.type === 'position' && change.position) {
+          return {
+            ...change,
+            position: getSnappedPosition(change.id, change.position, nodes),
+          };
         }
         return change;
       });
 
       onNodesChange(adjustedChanges);
     },
-    [nodes, onNodesChange]
+    [nodes, onNodesChange, getSnappedPosition]
   );
 
-  // When node drag stops, persist new position
+  // When node drag stops, persist the snapped position along with all current node positions
   const handleNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
-      const newPos = { x: Math.round(node.position.x), y: Math.round(node.position.y) };
-      const updatedPositions = { ...(customNodePositions || {}) };
+      const newPos = getSnappedPosition(node.id, node.position, nodes);
+      setNodes((nds) =>
+        nds.map((n) => (n.id === node.id ? { ...n, position: newPos } : n))
+      );
+      const updatedPositions: Record<string, { x: number; y: number }> = {
+        ...(customNodePositions || {}),
+      };
+      nodes.forEach((n) => {
+        updatedPositions[n.id] =
+          n.id === node.id
+            ? newPos
+            : { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+      });
       updatedPositions[node.id] = newPos;
 
       if (onPositionsChange) {
         onPositionsChange(updatedPositions);
       }
     },
-    [customNodePositions, onPositionsChange]
+    [nodes, setNodes, customNodePositions, onPositionsChange, getSnappedPosition]
   );
 
   // Reset positions handler
@@ -237,6 +256,7 @@ const IpoRelationshipsDiagram: React.FC<{
       const isSel = e.id === selectedEdgeId;
       const conn = connections.find((c) => c.id === e.id);
       const edgeColor = conn?.color || (e.data as any)?.color || '#4f46e5';
+      const edgeLineStyle = conn?.lineStyle || (e.data as any)?.lineStyle || 'solid';
       const edgeLabel = conn?.label?.trim()
         ? conn.label.trim()
         : (e.data as any)?.label || '';
@@ -250,6 +270,7 @@ const IpoRelationshipsDiagram: React.FC<{
           ...(e.data as any),
           connectionId: e.id,
           color: edgeColor,
+          lineStyle: edgeLineStyle,
           label: edgeLabel,
           labelPosition: typeof conn?.labelPosition === 'number' ? conn.labelPosition : (e.data as any)?.labelPosition ?? 0.5,
           onUpdateConnection,
@@ -259,6 +280,7 @@ const IpoRelationshipsDiagram: React.FC<{
           ...e.style,
           stroke: edgeColor,
           strokeWidth: isSel ? 3.5 : 2,
+          strokeDasharray: edgeLineStyle === 'dashed' ? '6 4' : undefined,
           fill: 'none',
         },
       };
@@ -281,8 +303,7 @@ const IpoRelationshipsDiagram: React.FC<{
         }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        snapToGrid={true}
-        snapGrid={[15, 15]}
+        snapToGrid={false}
         fitView
         minZoom={0.2}
         maxZoom={2}
@@ -294,7 +315,7 @@ const IpoRelationshipsDiagram: React.FC<{
         <Background color="#cbd5e1" gap={18} size={1} />
         <Controls showInteractive={false} className="!bg-white !border !border-slate-200 !shadow-md !rounded-lg" />
         <MiniMap
-          nodeColor="#6366f1"
+          nodeColor={(n) => ((n.data as any)?.fn?.type === 'database' ? '#9333ea' : '#6366f1')}
           maskColor="rgba(241, 245, 249, 0.7)"
           className="!bg-white !border !border-slate-200 !shadow-md !rounded-lg !m-3"
           zoomable
@@ -387,11 +408,18 @@ const IpoRelationshipsDiagram: React.FC<{
                     Pin Tag [{selectedSrcOut.name}]
                   </option>
                 )}
+                <option value="source-top">Sisi Atas (Tengah)</option>
+                <option value="source-top-left">Sisi Atas (Kiri)</option>
+                <option value="source-top-right">Sisi Atas (Kanan)</option>
                 <option value="source-bottom">Sisi Bawah (Tengah)</option>
                 <option value="source-bottom-left">Sisi Bawah (Kiri)</option>
                 <option value="source-bottom-right">Sisi Bawah (Kanan)</option>
-                <option value="source-left">Sisi Kiri</option>
-                <option value="source-right">Sisi Kanan</option>
+                <option value="source-left-top">Sisi Kiri (Atas)</option>
+                <option value="source-left">Sisi Kiri (Tengah)</option>
+                <option value="source-left-bottom">Sisi Kiri (Bawah)</option>
+                <option value="source-right-top">Sisi Kanan (Atas)</option>
+                <option value="source-right">Sisi Kanan (Tengah)</option>
+                <option value="source-right-bottom">Sisi Kanan (Bawah)</option>
               </select>
             </div>
 
@@ -417,8 +445,32 @@ const IpoRelationshipsDiagram: React.FC<{
                 <option value="target-top">Sisi Atas (Tengah)</option>
                 <option value="target-top-left">Sisi Atas (Kiri)</option>
                 <option value="target-top-right">Sisi Atas (Kanan)</option>
-                <option value="target-left">Sisi Kiri</option>
-                <option value="target-right">Sisi Kanan</option>
+                <option value="target-bottom">Sisi Bawah (Tengah)</option>
+                <option value="target-bottom-left">Sisi Bawah (Kiri)</option>
+                <option value="target-bottom-right">Sisi Bawah (Kanan)</option>
+                <option value="target-left-top">Sisi Kiri (Atas)</option>
+                <option value="target-left">Sisi Kiri (Tengah)</option>
+                <option value="target-left-bottom">Sisi Kiri (Bawah)</option>
+                <option value="target-right-top">Sisi Kanan (Atas)</option>
+                <option value="target-right">Sisi Kanan (Tengah)</option>
+                <option value="target-right-bottom">Sisi Kanan (Bawah)</option>
+              </select>
+            </div>
+
+            {/* Line Style Toggle */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-600">Garis:</span>
+              <select
+                value={selectedConnection.lineStyle || 'solid'}
+                onChange={(e) =>
+                  onUpdateConnection?.(selectedConnection.id, {
+                    lineStyle: e.target.value as 'solid' | 'dashed',
+                  })
+                }
+                className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="solid">Solid (───)</option>
+                <option value="dashed">Dashed (---)</option>
               </select>
             </div>
 
@@ -675,7 +727,21 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
       exportAllCharts: handleExportAllCharts,
       exportRelationships: handleExportRelationships,
       resetPositions: () => resetPositionsCallbackRef.current(),
+      getNodePositions: () => {
+        const result: Record<string, { x: number; y: number }> = {
+          ...(customNodePositions || {}),
+        };
+        activeNodesRef.current.forEach((n) => {
+          result[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+        });
+        return result;
+      },
     }));
+
+    const actualFunctions = useMemo(
+      () => functions.filter((f) => f.type !== 'database'),
+      [functions]
+    );
 
     return (
       <div className="w-full h-full flex flex-col min-h-0 bg-slate-100 select-none overflow-hidden">
@@ -692,7 +758,7 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
               }`}
             >
               <Table2 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>IPO Charts ({functions.length})</span>
+              <span>IPO Charts ({actualFunctions.length})</span>
             </button>
 
             <button
@@ -763,11 +829,11 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
                     {projectName || 'Functional Design IPO Charts'}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Input – Process – Output Specifications ({functions.length} Function{functions.length > 1 ? 's' : ''})
+                    Input – Process – Output Specifications ({actualFunctions.length} Function{actualFunctions.length > 1 ? 's' : ''})
                   </p>
                 </div>
 
-                {functions.length === 0 ? (
+                {actualFunctions.length === 0 ? (
                   <div className="py-12 text-center text-slate-400">
                     <Table2 className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                     <p className="text-xs font-medium">Belum ada Function untuk ditampilkan.</p>
@@ -776,20 +842,26 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
                     </p>
                   </div>
                 ) : (
-                  functions.map((fn, idx) => (
+                  actualFunctions.map((fn, idx) => (
                     <div
                       key={fn.id}
                       className="border border-slate-300 rounded-xl overflow-hidden bg-white shadow-2xs"
                     >
                       {/* Function Name Heading */}
-                      <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-300 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded bg-indigo-600 text-white font-mono text-[10px] font-bold flex items-center justify-center">
+                      <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-300 flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="w-5 h-5 rounded bg-indigo-600 text-white font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
                             {idx + 1}
                           </span>
                           <h3 className="font-mono font-bold text-sm text-slate-900">
                             {fn.name ? `${fn.name}()` : '(untitledFunction)'}
                           </h3>
+                          {fn.role?.trim() && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-semibold">
+                              <User className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span>Role: {fn.role.trim()}</span>
+                            </span>
+                          )}
                         </div>
                         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                           IPO Chart

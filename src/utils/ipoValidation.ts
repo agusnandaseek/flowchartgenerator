@@ -41,32 +41,34 @@ export function validateIpoProject(
     });
     inputMap.set(fn.id, inIds);
 
-    // Function name required
+    // Function/Database name required
     if (!fn.name || !fn.name.trim()) {
-      const msg = 'Function name is required.';
+      const msg = fn.type === 'database' ? 'Database name is required.' : 'Function name is required.';
       fnErrs.push(msg);
       errors.push({ type: 'function', id: fn.id, field: 'name', message: msg });
     }
 
-    // At least one input
-    if (fnInputs.length === 0) {
-      const msg = 'At least one input is required.';
-      fnErrs.push(msg);
-      errors.push({ type: 'function', id: fn.id, field: 'inputs', message: msg });
-    }
+    if (fn.type !== 'database') {
+      // At least one input
+      if (fnInputs.length === 0) {
+        const msg = 'At least one input is required.';
+        fnErrs.push(msg);
+        errors.push({ type: 'function', id: fn.id, field: 'inputs', message: msg });
+      }
 
-    // At least one process
-    if (fnProcesses.length === 0) {
-      const msg = 'At least one process is required.';
-      fnErrs.push(msg);
-      errors.push({ type: 'function', id: fn.id, field: 'processes', message: msg });
-    }
+      // At least one process
+      if (fnProcesses.length === 0) {
+        const msg = 'At least one process is required.';
+        fnErrs.push(msg);
+        errors.push({ type: 'function', id: fn.id, field: 'processes', message: msg });
+      }
 
-    // At least one output
-    if (fnOutputs.length === 0) {
-      const msg = 'At least one output is required.';
-      fnErrs.push(msg);
-      errors.push({ type: 'function', id: fn.id, field: 'outputs', message: msg });
+      // At least one output
+      if (fnOutputs.length === 0) {
+        const msg = 'At least one output is required.';
+        fnErrs.push(msg);
+        errors.push({ type: 'function', id: fn.id, field: 'outputs', message: msg });
+      }
     }
 
     if (fnErrs.length > 0) {
@@ -82,8 +84,22 @@ export function validateIpoProject(
     const srcOutputs = outputMap.get(conn.sourceFunctionId);
     const tgtInputs = inputMap.get(conn.targetFunctionId);
 
-    const isSrcValid = srcFn && srcOutputs && srcOutputs.has(conn.sourceOutputId);
-    const isTgtValid = tgtFn && tgtInputs && tgtInputs.has(conn.targetInputId);
+    const isSrcDb = srcFn?.type === 'database';
+    const isTgtDb = tgtFn?.type === 'database';
+
+    const isSrcValid =
+      !!srcFn &&
+      (isSrcDb ||
+        conn.sourceOutputId === '__direct__' ||
+        (isTgtDb && !conn.sourceOutputId) ||
+        (!!srcOutputs && srcOutputs.has(conn.sourceOutputId)));
+
+    const isTgtValid =
+      !!tgtFn &&
+      (isTgtDb ||
+        conn.targetInputId === '__direct__' ||
+        (isSrcDb && !conn.targetInputId) ||
+        (!!tgtInputs && tgtInputs.has(conn.targetInputId)));
 
     if (!isSrcValid || !isTgtValid) {
       const msg = 'Connection contains an invalid reference.';

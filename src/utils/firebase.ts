@@ -17,7 +17,7 @@ import {
   orderBy,
   type Firestore,
 } from 'firebase/firestore';
-import type { ShareHistoryItem } from './storage';
+import { normalizeShareUrl, type ShareHistoryItem } from './storage';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -86,9 +86,10 @@ export async function fetchSharesFromFirebase(): Promise<ShareHistoryItem[]> {
     const items: ShareHistoryItem[] = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data();
+      const itemId = data.id || docSnap.id;
       items.push({
-        id: data.id || docSnap.id,
-        url: data.url || '',
+        id: itemId,
+        url: normalizeShareUrl(data.url || '', itemId),
         projectName: data.projectName || 'Proyek Tanpa Nama',
         mode: data.mode || 'flowchart',
         createdAt: data.createdAt || new Date().toISOString(),

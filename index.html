@@ -2,7 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function () {
+        var host = window.location.hostname.toLowerCase();
+        if (
+          host === 'flowchart.nandacreative.my.id' ||
+          host === 'www.flowchart.nandacreative.my.id'
+        ) {
+          window.location.replace(
+            'https://flowchart.bynanda.my.id' +
+              window.location.pathname +
+              window.location.search +
+              window.location.hash
+          );
+        }
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://flowchart.bynanda.my.id/" />
+    <meta property="og:url" content="https://flowchart.bynanda.my.id/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pseudocode to Flowchart Studio | Generator Diagram Alur</title>
   </head>

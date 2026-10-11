@@ -177,28 +177,62 @@ export function setAutoSave(data: {
   } catch {}
 }
 
+export const CANONICAL_DOMAIN = 'https://flowchart.bynanda.my.id';
+export const LEGACY_DOMAINS = [
+  'flowchart.nandacreative.my.id',
+  'www.flowchart.nandacreative.my.id',
+];
+
+export function getPublicBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return `${CANONICAL_DOMAIN}/`;
+  }
+  const host = window.location.hostname.toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `${window.location.origin}${window.location.pathname}`;
+  }
+  return `${CANONICAL_DOMAIN}${window.location.pathname}`;
+}
+
+export function normalizeShareUrl(url: string, id: string): string {
+  if (!url) {
+    return `${getPublicBaseUrl()}?p=${id}`;
+  }
+  let normalized = url;
+  for (const legacyHost of LEGACY_DOMAINS) {
+    if (normalized.includes(legacyHost)) {
+      normalized = normalized.replace(
+        new RegExp(`https?://${legacyHost.replace(/\./g, '\\.')}`, 'gi'),
+        CANONICAL_DOMAIN
+      );
+    }
+  }
+  return normalized;
+}
+
 export function getShareHistory(): ShareHistoryItem[] {
   try {
     const raw = localStorage.getItem(SHARE_HISTORY_KEY);
     if (!raw) {
+      const baseUrl = getPublicBaseUrl();
       const initialSeed: ShareHistoryItem[] = [
         {
           id: 'BY69FXN3Y',
-          url: `${typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''}?p=BY69FXN3Y`,
+          url: `${baseUrl}?p=BY69FXN3Y`,
           projectName: 'Hotel Room Booking & Billing System',
           mode: 'ipo',
           createdAt: '2026-10-04T09:11:37.000Z',
         },
         {
           id: '6VYGTRSTQ',
-          url: `${typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''}?p=6VYGTRSTQ`,
+          url: `${baseUrl}?p=6VYGTRSTQ`,
           projectName: 'Sistem Manajemen Logistik & Pengiriman',
           mode: 'structure',
           createdAt: '2026-10-04T09:11:15.000Z',
         },
         {
           id: 'AAFZ4TGQT',
-          url: `${typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''}?p=AAFZ4TGQT`,
+          url: `${baseUrl}?p=AAFZ4TGQT`,
           projectName: 'Autentikasi Pengguna & OTP',
           mode: 'flowchart',
           createdAt: '2026-10-04T09:10:56.000Z',
@@ -209,7 +243,11 @@ export function getShareHistory(): ShareHistoryItem[] {
       } catch {}
       return initialSeed;
     }
-    return JSON.parse(raw);
+    const parsed: ShareHistoryItem[] = JSON.parse(raw);
+    return parsed.map((item) => ({
+      ...item,
+      url: normalizeShareUrl(item.url, item.id),
+    }));
   } catch (err) {
     console.error('Failed to load share history from localStorage:', err);
     return [];
@@ -258,6 +296,125 @@ export function clearShareHistory(): void {
   } catch {}
 }
 
+export function normalizeNodePositions(
+  rawPositions: unknown
+): Record<string, { x: number; y: number }> | undefined {
+  if (!rawPositions || typeof rawPositions !== 'object' || Array.isArray(rawPositions)) {
+    return undefined;
+  }
+  const result: Record<string, { x: number; y: number }> = {};
+  for (const [key, val] of Object.entries(rawPositions as Record<string, unknown>)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (val && typeof val === 'object') {
+      const pos = val as Record<string, unknown>;
+      if (typeof pos.x === 'number' && typeof pos.y === 'number' && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+        result[key] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+      }
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export function normalizeIpoFunctions(rawFunctions: unknown): IpoFunction[] {
+  if (!Array.isArray(rawFunctions)) return [];
+  return rawFunctions
+    .filter((fn): fn is Record<string, unknown> => !!fn && typeof fn === 'object')
+    .map((fn, fIdx) => {
+      const fnId = typeof fn.id === 'string' && fn.id ? fn.id : `fn_${Date.now()}_${fIdx}`;
+      const fnName = typeof fn.name === 'string' ? fn.name : `Fungsi ${fIdx + 1}`;
+      const isDb = fn.type === 'database';
+
+      const rawInputs = Array.isArray(fn.inputs) ? fn.inputs : [];
+      const inputs = isDb
+        ? []
+        : rawInputs.map((inp: unknown, iIdx: number) => {
+            if (typeof inp === 'string') {
+              return { id: `in_${fnId}_${iIdx}`, name: inp };
+            }
+            const inpObj = inp as Record<string, unknown>;
+            return {
+              id: typeof inpObj?.id === 'string' && inpObj.id ? inpObj.id : `in_${fnId}_${iIdx}`,
+              name: String(inpObj?.name ?? inpObj?.label ?? `Input ${iIdx + 1}`),
+            };
+          });
+
+      const rawProcesses = Array.isArray(fn.processes)
+        ? fn.processes
+        : Array.isArray(fn.process)
+        ? (fn.process as unknown[])
+        : [];
+      const processes = isDb
+        ? []
+        : rawProcesses.map((prc: unknown, pIdx: number) => {
+            if (typeof prc === 'string') {
+              return { id: `prc_${fnId}_${pIdx}`, description: prc };
+            }
+            const prcObj = prc as Record<string, unknown>;
+            return {
+              id: typeof prcObj?.id === 'string' && prcObj.id ? prcObj.id : `prc_${fnId}_${pIdx}`,
+              description: String(
+                prcObj?.description ?? prcObj?.process ?? prcObj?.name ?? `Proses ${pIdx + 1}`
+              ),
+            };
+          });
+
+      const rawOutputs = Array.isArray(fn.outputs) ? fn.outputs : [];
+      const outputs = isDb
+        ? []
+        : rawOutputs.map((out: unknown, oIdx: number) => {
+            if (typeof out === 'string') {
+              return { id: `out_${fnId}_${oIdx}`, name: out };
+            }
+            const outObj = out as Record<string, unknown>;
+            return {
+              id: typeof outObj?.id === 'string' && outObj.id ? outObj.id : `out_${fnId}_${oIdx}`,
+              name: String(outObj?.name ?? outObj?.label ?? `Output ${oIdx + 1}`),
+            };
+          });
+
+      return {
+        id: fnId,
+        name: fnName,
+        role: typeof fn.role === 'string' && fn.role.trim() ? fn.role.trim() : undefined,
+        type: isDb ? 'database' : 'function',
+        inputs,
+        processes,
+        outputs,
+      };
+    });
+}
+
+export function normalizeIpoConnections(rawConnections: unknown): IpoConnection[] {
+  if (!Array.isArray(rawConnections)) return [];
+  return rawConnections
+    .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+    .map((c, idx) => ({
+      id: typeof c.id === 'string' && c.id ? c.id : `conn_${Date.now()}_${idx}`,
+      sourceFunctionId: typeof c.sourceFunctionId === 'string' ? c.sourceFunctionId : '',
+      sourceOutputId: typeof c.sourceOutputId === 'string' ? c.sourceOutputId : '',
+      targetFunctionId: typeof c.targetFunctionId === 'string' ? c.targetFunctionId : '',
+      targetInputId: typeof c.targetInputId === 'string' ? c.targetInputId : '',
+      label: typeof c.label === 'string' ? c.label : undefined,
+      color:
+        typeof c.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c.color.trim())
+          ? c.color.trim()
+          : undefined,
+      lineStyle: c.lineStyle === 'dashed' ? 'dashed' : 'solid',
+      sourceHandle:
+        typeof c.sourceHandle === 'string' && c.sourceHandle.trim()
+          ? c.sourceHandle.trim()
+          : undefined,
+      targetHandle:
+        typeof c.targetHandle === 'string' && c.targetHandle.trim()
+          ? c.targetHandle.trim()
+          : undefined,
+      labelPosition:
+        typeof c.labelPosition === 'number' && Number.isFinite(c.labelPosition)
+          ? Math.max(0.1, Math.min(0.9, c.labelPosition))
+          : undefined,
+    }));
+}
+
 /**
  * Creates a public unique share link using cloud storage,
  * supporting Flowchart, Structure Chart, and IPO Chart!
@@ -265,10 +422,11 @@ export function clearShareHistory(): void {
 export async function createCloudShare(
   project: UniversalShareData
 ): Promise<{ id: string; url: string }> {
+  const mode = project.mode || 'flowchart';
   const payload = JSON.stringify({
     appName: 'Program Design Studio',
-    version: '2.0.0',
-    mode: project.mode,
+    version: '2.1.0',
+    mode,
     projectName: project.name,
     code: project.code,
     direction: project.direction || 'TB',
@@ -276,9 +434,9 @@ export async function createCloudShare(
     edgeStyle: project.edgeStyle || 'step',
     nodePositions: project.nodePositions || {},
     structureCode: project.structureCode,
-    functions: project.functions,
-    connections: project.connections,
-    ipoNodePositions: project.ipoNodePositions,
+    functions: project.functions ? normalizeIpoFunctions(project.functions) : undefined,
+    connections: project.connections ? normalizeIpoConnections(project.connections) : undefined,
+    ipoNodePositions: project.ipoNodePositions || {},
     createdAt: new Date().toISOString(),
   });
 
@@ -300,27 +458,32 @@ export async function createCloudShare(
   const dpasteUrl = await res.text();
   const id = dpasteUrl.trim().split('/').filter(Boolean).pop() || '';
 
-  // Cache in local projects if it was a flowchart
-  if (project.mode === 'flowchart' && project.code) {
-    saveProject(
-      project.name,
-      project.code,
-      project.direction || 'TB',
-      id,
-      project.density,
-      project.edgeStyle,
-      project.nodePositions
-    );
-  }
+  // Cache in local projects for offline fallback
+  saveProject(
+    project.name,
+    project.code || project.structureCode || '',
+    project.direction || 'TB',
+    id,
+    project.density,
+    project.edgeStyle,
+    project.nodePositions,
+    mode,
+    {
+      structureCode: project.structureCode,
+      functions: project.functions,
+      connections: project.connections,
+      ipoNodePositions: project.ipoNodePositions,
+    }
+  );
 
-  const shareUrl = `${window.location.origin}${window.location.pathname}?p=${id}`;
+  const shareUrl = `${getPublicBaseUrl()}?p=${id}`;
 
   // Automatically record to share history database
   saveShareHistoryItem({
     id,
     url: shareUrl,
     projectName: project.name?.trim() || 'Proyek Tanpa Nama',
-    mode: project.mode || 'flowchart',
+    mode,
     createdAt: new Date().toISOString(),
   });
 
@@ -342,7 +505,7 @@ export async function fetchSharedProject(
       const text = await res.text();
       const parsed = JSON.parse(text);
 
-      if (parsed) {
+      if (parsed && typeof parsed === 'object') {
         // Detect mode: 'structure' | 'ipo' | 'flowchart'
         let mode: AppMode = 'flowchart';
         if (parsed.mode === 'structure' || (!parsed.code && parsed.structureCode)) {
@@ -362,28 +525,30 @@ export async function fetchSharedProject(
           edgeStyle: (['step', 'straight', 'smoothstep'].includes(parsed.edgeStyle)
             ? parsed.edgeStyle
             : 'step') as FlowEdgeStyle,
-          nodePositions:
-            parsed.nodePositions && typeof parsed.nodePositions === 'object'
-              ? (parsed.nodePositions as Record<string, { x: number; y: number }>)
-              : undefined,
+          nodePositions: normalizeNodePositions(parsed.nodePositions),
           structureCode: parsed.structureCode || (mode === 'structure' ? parsed.code : undefined),
-          functions: parsed.functions,
-          connections: parsed.connections,
-          ipoNodePositions: parsed.ipoNodePositions,
+          functions: mode === 'ipo' ? normalizeIpoFunctions(parsed.functions) : undefined,
+          connections: mode === 'ipo' ? normalizeIpoConnections(parsed.connections) : undefined,
+          ipoNodePositions: normalizeNodePositions(parsed.ipoNodePositions),
         };
 
-        // Cache in local storage if flowchart
-        if (projectData.mode === 'flowchart' && projectData.code) {
-          saveProject(
-            projectData.name,
-            projectData.code,
-            projectData.direction || 'TB',
-            cleanId,
-            projectData.density,
-            projectData.edgeStyle,
-            projectData.nodePositions
-          );
-        }
+        // Cache in local storage for current mode
+        saveProject(
+          projectData.name,
+          projectData.code || projectData.structureCode || '',
+          projectData.direction || 'TB',
+          cleanId,
+          projectData.density,
+          projectData.edgeStyle,
+          projectData.nodePositions,
+          mode,
+          {
+            structureCode: projectData.structureCode,
+            functions: projectData.functions,
+            connections: projectData.connections,
+            ipoNodePositions: projectData.ipoNodePositions,
+          }
+        );
 
         return projectData;
       }
@@ -392,19 +557,27 @@ export async function fetchSharedProject(
     console.warn('Gagal mengambil data proyek dari cloud, mencoba cache lokal:', err);
   }
 
-  // Fallback to local storage
-  const localProjects = getSavedProjects();
-  const foundLocal = localProjects.find((p) => p.id === cleanId);
-  if (foundLocal) {
-    return {
-      mode: 'flowchart',
-      name: foundLocal.name,
-      code: foundLocal.code,
-      direction: foundLocal.direction,
-      density: foundLocal.density,
-      edgeStyle: foundLocal.edgeStyle,
-      nodePositions: foundLocal.nodePositions,
-    };
+  // Fallback to local storage across all modes
+  for (const m of ['flowchart', 'ipo', 'structure'] as const) {
+    const localProjects = getSavedProjects(m);
+    const foundLocal = localProjects.find((p) => p.id === cleanId);
+    if (foundLocal) {
+      return {
+        mode: foundLocal.mode || m,
+        name: foundLocal.name,
+        code: foundLocal.code,
+        direction: foundLocal.direction,
+        density: foundLocal.density,
+        edgeStyle: foundLocal.edgeStyle,
+        nodePositions: normalizeNodePositions(foundLocal.nodePositions),
+        structureCode: foundLocal.structureCode,
+        functions: foundLocal.functions ? normalizeIpoFunctions(foundLocal.functions) : undefined,
+        connections: foundLocal.connections
+          ? normalizeIpoConnections(foundLocal.connections)
+          : undefined,
+        ipoNodePositions: normalizeNodePositions(foundLocal.ipoNodePositions),
+      };
+    }
   }
 
   return null;
@@ -432,7 +605,7 @@ export function exportProjectToJSON(data: {
         : currentMode === 'structure'
         ? 'Structure Chart Studio'
         : 'Flowchart Logic Studio',
-    version: '2.0.0',
+    version: '2.1.0',
     mode: currentMode,
     projectName: data.name,
     exportedAt: new Date().toISOString(),
@@ -457,8 +630,8 @@ export function exportProjectToJSON(data: {
   } else if (currentMode === 'ipo') {
     payload = {
       ...payload,
-      functions: data.functions || [],
-      connections: data.connections || [],
+      functions: normalizeIpoFunctions(data.functions || []),
+      connections: normalizeIpoConnections(data.connections || []),
       ipoNodePositions: data.ipoNodePositions || {},
     };
   }
@@ -509,73 +682,12 @@ export function importProjectFromJSON(file: File): Promise<UniversalShareData> {
             return;
           }
 
-          // Normalize functions to guarantee compatibility
-          const normalizedFunctions: IpoFunction[] = parsed.functions.map(
-            (fn: Record<string, unknown>, fIdx: number) => {
-              const fnId = typeof fn.id === 'string' ? fn.id : `fn_${Date.now()}_${fIdx}`;
-              const fnName = typeof fn.name === 'string' ? fn.name : `Fungsi ${fIdx + 1}`;
-
-              const rawInputs = Array.isArray(fn.inputs) ? fn.inputs : [];
-              const inputs = rawInputs.map((inp: unknown, iIdx: number) => {
-                if (typeof inp === 'string') {
-                  return { id: `in_${fnId}_${iIdx}`, name: inp };
-                }
-                const inpObj = inp as Record<string, unknown>;
-                return {
-                  id: typeof inpObj?.id === 'string' ? inpObj.id : `in_${fnId}_${iIdx}`,
-                  name: String(inpObj?.name || inpObj?.label || `Input ${iIdx + 1}`),
-                };
-              });
-
-              const rawProcesses = Array.isArray(fn.processes)
-                ? fn.processes
-                : Array.isArray(fn.process)
-                ? (fn.process as unknown[])
-                : [];
-              const processes = rawProcesses.map((prc: unknown, pIdx: number) => {
-                if (typeof prc === 'string') {
-                  return { id: `prc_${fnId}_${pIdx}`, description: prc };
-                }
-                const prcObj = prc as Record<string, unknown>;
-                return {
-                  id: typeof prcObj?.id === 'string' ? prcObj.id : `prc_${fnId}_${pIdx}`,
-                  description: String(
-                    prcObj?.description || prcObj?.process || prcObj?.name || `Proses ${pIdx + 1}`
-                  ),
-                };
-              });
-
-              const rawOutputs = Array.isArray(fn.outputs) ? fn.outputs : [];
-              const outputs = rawOutputs.map((out: unknown, oIdx: number) => {
-                if (typeof out === 'string') {
-                  return { id: `out_${fnId}_${oIdx}`, name: out };
-                }
-                const outObj = out as Record<string, unknown>;
-                return {
-                  id: typeof outObj?.id === 'string' ? outObj.id : `out_${fnId}_${oIdx}`,
-                  name: String(outObj?.name || outObj?.label || `Output ${oIdx + 1}`),
-                };
-              });
-
-              return {
-                id: fnId,
-                name: fnName,
-                inputs,
-                processes,
-                outputs,
-              };
-            }
-          );
-
           resolve({
             mode: 'ipo',
             name: projectName,
-            functions: normalizedFunctions,
-            connections: Array.isArray(parsed.connections) ? parsed.connections : [],
-            ipoNodePositions:
-              parsed.ipoNodePositions && typeof parsed.ipoNodePositions === 'object'
-                ? parsed.ipoNodePositions
-                : undefined,
+            functions: normalizeIpoFunctions(parsed.functions),
+            connections: normalizeIpoConnections(parsed.connections),
+            ipoNodePositions: normalizeNodePositions(parsed.ipoNodePositions),
           });
           return;
         }
@@ -625,10 +737,7 @@ export function importProjectFromJSON(file: File): Promise<UniversalShareData> {
           edgeStyle: ['step', 'straight', 'smoothstep'].includes(parsed.edgeStyle)
             ? parsed.edgeStyle
             : 'step',
-          nodePositions:
-            parsed.nodePositions && typeof parsed.nodePositions === 'object'
-              ? parsed.nodePositions
-              : undefined,
+          nodePositions: normalizeNodePositions(parsed.nodePositions),
         });
       } catch {
         reject(new Error('Gagal membaca file JSON: format file rusak atau bukan JSON yang valid.'));

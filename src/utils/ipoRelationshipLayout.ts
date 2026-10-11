@@ -59,7 +59,7 @@ export function getIpoRelationshipElements(
       ? tgtIn.name
       : '';
 
-    const edgeColor = conn.color?.trim() || '#4f46e5';
+    const edgeColor = conn.color?.trim() || (srcFn.type === 'database' || tgtFn.type === 'database' ? '#9333ea' : '#4f46e5');
 
     edges.push({
       id: conn.id,
@@ -71,6 +71,7 @@ export function getIpoRelationshipElements(
       data: {
         connectionId: conn.id,
         color: edgeColor,
+        lineStyle: conn.lineStyle || 'solid',
         sourceOutputId: conn.sourceOutputId,
         targetInputId: conn.targetInputId,
         sourceHandle: conn.sourceHandle,
@@ -92,7 +93,12 @@ export function getIpoRelationshipElements(
       },
     });
 
-    dagreGraph.setEdge(conn.sourceFunctionId, conn.targetFunctionId);
+    // Rank database blocks below functions that read/write them by default
+    if (srcFn.type === 'database' && tgtFn.type !== 'database') {
+      dagreGraph.setEdge(conn.targetFunctionId, conn.sourceFunctionId);
+    } else {
+      dagreGraph.setEdge(conn.sourceFunctionId, conn.targetFunctionId);
+    }
   });
 
   // 3. Compute layout with Dagre
@@ -147,11 +153,8 @@ export function getIpoRelationshipElements(
 }
 
 /**
- * Menyesuaikan handle koneksi (kiri, kanan, bawah) secara otomatis serta mencegah overlap garis.
- * - Mendukung titik handle spesifik (per-output pin atau per-input pin) yang dipilih pengguna.
- * - Anti-Overlap: Jika target block menerima 2 atau lebih koneksi (seperti pada contoh PrintInvoice),
- *   garis dari samping masuk via handle samping (target-left/target-right),
- *   sedangkan garis dari atas didistribusikan secara terpisah (target-top-left / target-top-right).
+ * Menyesuaikan handle koneksi (atas, bawah, kiri, kanan) secara otomatis serta mencegah overlap garis.
+ * Mendukung panah dua arah (read/write) ke/dari blok Database di bawah maupun di atas function.
  */
 export function updateIpoEdgeHandles(
   edges: Edge[],
@@ -161,9 +164,7 @@ export function updateIpoEdgeHandles(
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const connMap = new Map((connections || []).map((c) => [c.id, c]));
 
-  // Kelompokkan edge keluar berdasarkan source
   const sourceToEdges = new Map<string, Edge[]>();
-  // Kelompokkan edge masuk berdasarkan target untuk deteksi & pencegahan overlap
   const targetToIncoming = new Map<string, Edge[]>();
 
   for (const edge of edges) {
@@ -180,7 +181,7 @@ export function updateIpoEdgeHandles(
   const NODE_HEIGHT = 120;
   const HORIZONTAL_THRESHOLD = 30;
 
-  return edges.map((edge) => {
+  const initialEdges = edges.map((edge) => {
     const sourceNode = nodeMap.get(edge.source);
     const targetNode = nodeMap.get(edge.target);
     const conn = connMap.get(edge.id) || (edge.data as any);
@@ -189,7 +190,6 @@ export function updateIpoEdgeHandles(
       return edge;
     }
 
-    // Jika pengguna secara manual menetapkan kedua handle kustom, prioritaskan pilihan pengguna
     if (conn?.sourceHandle && conn?.targetHandle) {
       if (edge.sourceHandle !== conn.sourceHandle || edge.targetHandle !== conn.targetHandle) {
         return {
@@ -206,9 +206,88 @@ export function updateIpoEdgeHandles(
     const targetCenterX = targetNode.position.x + NODE_WIDTH / 2;
     const targetCenterY = targetNode.position.y + NODE_HEIGHT / 2;
 
-    const dx = targetCenterX - sourceCenterX; // Positif jika target di sebelah kanan source
-    const dy = targetCenterY - sourceCenterY; // Positif jika target di bawah source
+    const dx = targetCenterX - sourceCenterX;
+    const dy = targetCenterY - sourceCenterY;
 
+    const isSourceDb = (sourceNode.data as any)?.fn?.type === 'database';
+    const isTargetDb = (targetNode.data as any)?.fn?.type === 'database';
+
+    // Kumpulkan semua edge yang menghubungkan pasangan node yang sama (dua arah)
+    const pairEdges = edges.filter(
+      (e) =>
+        (e.source === edge.source && e.target === edge.target) ||
+        (e.source === edge.target && e.target === edge.source)
+    );
+    const pairIdx = pairEdges.findIndex((e) => e.id === edge.id);
+
+    const isVerticallyAligned = Math.abs(dx) <= 20 && Math.abs(dy) > 40;
+    const isHorizontallyAligned = Math.abs(dy) <= 40 && Math.abs(dx) > 40;
+
+    // KASUS 0A: Sejajar Lurus Secara Vertikal (|dx| <= 20) -> Pasti garis lurus vertikal tanpa belokan
+    if (isVerticallyAligned) {
+      const slotSuffix =
+        pairEdges.length >= 2 ? (pairIdx === 0 ? '-left' : '-right') : '';
+      const newSourceHandle =
+        conn?.sourceHandle || (dy < 0 ? `source-top${slotSuffix}` : `source-bottom${slotSuffix}`);
+      const newTargetHandle =
+        conn?.targetHandle || (dy < 0 ? `target-bottom${slotSuffix}` : `target-top${slotSuffix}`);
+
+      if (edge.sourceHandle !== newSourceHandle || edge.targetHandle !== newTargetHandle) {
+        return { ...edge, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
+      }
+      return edge;
+    }
+
+    // KASUS 0B: Sejajar Lurus Secara Horizontal (|dy| <= 40) -> Pasti garis lurus horizontal
+    if (isHorizontallyAligned) {
+      const slotSuffix =
+        pairEdges.length >= 2 ? (pairIdx === 0 ? '-top' : '-bottom') : '';
+      const newSourceHandle =
+        conn?.sourceHandle || (dx > 0 ? `source-right${slotSuffix}` : `source-left${slotSuffix}`);
+      const newTargetHandle =
+        conn?.targetHandle || (dx > 0 ? `target-left${slotSuffix}` : `target-right${slotSuffix}`);
+
+      if (edge.sourceHandle !== newSourceHandle || edge.targetHandle !== newTargetHandle) {
+        return { ...edge, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
+      }
+      return edge;
+    }
+
+    // KASUS A: Target berada di ATAS Source secara diagonal (dy < -40)
+    if (dy < -40) {
+      let newSourceHandle = conn?.sourceHandle || 'source-top';
+      if (!conn?.sourceHandle) {
+        if (pairEdges.length >= 2) {
+          newSourceHandle = pairIdx === 0 ? 'source-top-left' : 'source-top-right';
+        } else if (dx > 20) {
+          newSourceHandle = 'source-top-right';
+        } else if (dx < -20) {
+          newSourceHandle = 'source-top-left';
+        } else {
+          newSourceHandle = 'source-top';
+        }
+      }
+
+      let newTargetHandle = conn?.targetHandle || 'target-bottom';
+      if (!conn?.targetHandle) {
+        if (pairEdges.length >= 2) {
+          newTargetHandle = pairIdx === 0 ? 'target-bottom-left' : 'target-bottom-right';
+        } else if (dx > HORIZONTAL_THRESHOLD) {
+          newTargetHandle = 'target-bottom-left';
+        } else if (dx < -HORIZONTAL_THRESHOLD) {
+          newTargetHandle = 'target-bottom-right';
+        } else {
+          newTargetHandle = 'target-bottom';
+        }
+      }
+
+      if (edge.sourceHandle !== newSourceHandle || edge.targetHandle !== newTargetHandle) {
+        return { ...edge, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
+      }
+      return edge;
+    }
+
+    // KASUS B: Target berada di BAWAH Source secara diagonal
     const outgoing = sourceToEdges.get(edge.source) || [];
     const distinctTargets = new Set(outgoing.map((e) => e.target));
     const incoming = targetToIncoming.get(edge.target) || [];
@@ -216,15 +295,14 @@ export function updateIpoEdgeHandles(
     // --- 1. TENTUKAN SOURCE HANDLE ---
     let newSourceHandle = conn?.sourceHandle || edge.sourceHandle || 'source-bottom';
     if (!conn?.sourceHandle) {
-      if (distinctTargets.size >= 2) {
+      if (pairEdges.length >= 2 && (isSourceDb || isTargetDb)) {
+        newSourceHandle = pairIdx === 0 ? 'source-bottom-left' : 'source-bottom-right';
+      } else if (distinctTargets.size >= 2 && !isTargetDb) {
         if (dx > HORIZONTAL_THRESHOLD) {
-          // Target berada di sebelah KANAN source
           newSourceHandle = 'source-right';
         } else if (dx < -HORIZONTAL_THRESHOLD) {
-          // Target berada di sebelah KIRI source
           newSourceHandle = 'source-left';
         } else {
-          // Target lurus di bawah source
           newSourceHandle = 'source-bottom';
         }
       } else {
@@ -235,45 +313,32 @@ export function updateIpoEdgeHandles(
     // --- 2. TENTUKAN TARGET HANDLE (ANTI-OVERLAP) ---
     let newTargetHandle = conn?.targetHandle || edge.targetHandle || 'target-top';
     if (!conn?.targetHandle) {
-      // Jika target block menerima 2 atau lebih koneksi (seperti pada PrintInvoice):
-      if (incoming.length > 1) {
-        // Jika source datang dari sebelah KIRI target (dx > HORIZONTAL_THRESHOLD)
+      if (isTargetDb) {
+        const topSideDbEdges = edges.filter((e) => {
+          const otherId = e.source === edge.target ? e.target : e.target === edge.target ? e.source : null;
+          if (!otherId) return false;
+          const otherNode = nodeMap.get(otherId);
+          return otherNode && otherNode.position.y + 40 < targetNode.position.y;
+        });
+
+        if (topSideDbEdges.length >= 2) {
+          newTargetHandle = dx > 20 ? 'target-top-left' : dx < -20 ? 'target-top-right' : 'target-top';
+        } else if (Math.abs(dy) <= NODE_HEIGHT * 0.75) {
+          if (dx > HORIZONTAL_THRESHOLD) newTargetHandle = 'target-left';
+          else if (dx < -HORIZONTAL_THRESHOLD) newTargetHandle = 'target-right';
+          else newTargetHandle = 'target-top';
+        } else {
+          newTargetHandle = 'target-top';
+        }
+      } else if (incoming.length > 1) {
         if (dx > HORIZONTAL_THRESHOLD) {
           newTargetHandle = 'target-left';
-        }
-        // Jika source datang dari sebelah KANAN target (dx < -HORIZONTAL_THRESHOLD)
-        else if (dx < -HORIZONTAL_THRESHOLD) {
+        } else if (dx < -HORIZONTAL_THRESHOLD) {
           newTargetHandle = 'target-right';
-        }
-        // Jika source datang dari ATAS target
-        else {
-          // Pisahkan garis-garis yang datang dari atas agar tidak bertumpuk
-          const incomingFromAbove = incoming.filter((e) => {
-            const s = nodeMap.get(e.source);
-            return s && targetNode.position.y > s.position.y + 40;
-          });
-
-          if (incomingFromAbove.length >= 2) {
-            // Urutkan berdasarkan koordinat X dari sumbernya
-            incomingFromAbove.sort((a, b) => {
-              const sa = nodeMap.get(a.source)?.position.x || 0;
-              const sb = nodeMap.get(b.source)?.position.x || 0;
-              return sa - sb;
-            });
-            const idx = incomingFromAbove.findIndex((e) => e.id === edge.id);
-            if (idx === 0) {
-              newTargetHandle = 'target-top-left';
-            } else if (idx === incomingFromAbove.length - 1) {
-              newTargetHandle = 'target-top-right';
-            } else {
-              newTargetHandle = 'target-top';
-            }
-          } else {
-            newTargetHandle = 'target-top';
-          }
+        } else {
+          newTargetHandle = dx > 20 ? 'target-top-left' : dx < -20 ? 'target-top-right' : 'target-top';
         }
       } else {
-        // Hanya 1 garis masuk ke target block ini
         if (Math.abs(dy) <= NODE_HEIGHT * 0.75) {
           if (dx > HORIZONTAL_THRESHOLD) newTargetHandle = 'target-left';
           else if (dx < -HORIZONTAL_THRESHOLD) newTargetHandle = 'target-right';
@@ -293,5 +358,77 @@ export function updateIpoEdgeHandles(
     }
 
     return edge;
+  });
+
+  // Distribusi otomatis ke slot Atas (-top) dan Bawah (-bottom) jika sisi Kiri atau Kanan suatu node menerima >= 2 koneksi
+  const sourceOverride = new Map<string, string>();
+  const targetOverride = new Map<string, string>();
+
+  for (const node of nodes) {
+    for (const side of ['left', 'right'] as const) {
+      const sideEndpoints: Array<{
+        edgeId: string;
+        role: 'source' | 'target';
+        otherY: number;
+        manual: boolean;
+      }> = [];
+
+      for (const e of initialEdges) {
+        const conn = connMap.get(e.id) || (e.data as any);
+        if (e.source === node.id && e.sourceHandle?.startsWith(`source-${side}`)) {
+          const otherY = nodeMap.get(e.target)?.position.y ?? 0;
+          const lockedSlot =
+            conn?.sourceHandle?.endsWith('-top') || conn?.sourceHandle?.endsWith('-bottom');
+          sideEndpoints.push({
+            edgeId: e.id,
+            role: 'source',
+            otherY,
+            manual: !!lockedSlot,
+          });
+        }
+        if (e.target === node.id && e.targetHandle?.startsWith(`target-${side}`)) {
+          const otherY = nodeMap.get(e.source)?.position.y ?? 0;
+          const lockedSlot =
+            conn?.targetHandle?.endsWith('-top') || conn?.targetHandle?.endsWith('-bottom');
+          sideEndpoints.push({
+            edgeId: e.id,
+            role: 'target',
+            otherY,
+            manual: !!lockedSlot,
+          });
+        }
+      }
+
+      if (sideEndpoints.length >= 2) {
+        sideEndpoints.sort((a, b) => {
+          if (Math.abs(a.otherY - b.otherY) > 10) return a.otherY - b.otherY;
+          return a.edgeId.localeCompare(b.edgeId);
+        });
+
+        sideEndpoints.forEach((ep, idx) => {
+          if (ep.manual) return;
+          const suffix =
+            idx === 0 ? '-top' : idx === sideEndpoints.length - 1 ? '-bottom' : '';
+          if (ep.role === 'source') {
+            sourceOverride.set(ep.edgeId, `source-${side}${suffix}`);
+          } else {
+            targetOverride.set(ep.edgeId, `target-${side}${suffix}`);
+          }
+        });
+      }
+    }
+  }
+
+  return initialEdges.map((e) => {
+    const sOvr = sourceOverride.get(e.id);
+    const tOvr = targetOverride.get(e.id);
+    if ((sOvr && sOvr !== e.sourceHandle) || (tOvr && tOvr !== e.targetHandle)) {
+      return {
+        ...e,
+        sourceHandle: sOvr || e.sourceHandle,
+        targetHandle: tOvr || e.targetHandle,
+      };
+    }
+    return e;
   });
 }
