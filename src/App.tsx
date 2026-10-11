@@ -515,6 +515,20 @@ export function App() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (ipoPreviewRef.current) {
+      ipoPreviewRef.current.exportExcel();
+      showToast('Berhasil mengekspor IPO Chart ke Excel (.xlsx)!', 'success');
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (ipoPreviewRef.current) {
+      ipoPreviewRef.current.exportPdf();
+      showToast('Berhasil mengekspor IPO Chart ke PDF (A4 Portrait)!', 'success');
+    }
+  };
+
   // Load project from storage or JSON import (Universal for all modes)
   const handleLoadUniversalProject = (p: UniversalShareData) => {
     if (p.mode === 'structure') {
@@ -649,6 +663,8 @@ export function App() {
         onSelectIpoTemplate={handleSelectIpoTemplate}
         onExportPNG={handleExportPNG}
         onExportJSON={handleExportJSON}
+        onExportExcel={handleExportExcel}
+        onExportPDF={handleExportPDF}
         onOpenHelp={() => setIsTutorialOpenOverride(true)}
         isFullscreenFlowchart={isFullscreenFlowchart}
         onToggleFullscreen={handleToggleFullscreen}

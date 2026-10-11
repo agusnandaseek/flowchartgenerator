@@ -8,6 +8,8 @@ import {
   FileCode2,
   FolderOpen,
   FileJson,
+  FileSpreadsheet,
+  FileText,
   Edit2,
   Maximize,
   Minimize2,
@@ -35,6 +37,8 @@ interface HeaderProps {
   onSelectIpoTemplate?: (templateId: string) => void;
   onExportPNG: () => void;
   onExportJSON: () => void;
+  onExportExcel?: () => void;
+  onExportPDF?: () => void;
   direction: 'TB' | 'LR';
   onToggleDirection: () => void;
   onOpenHelp: () => void;
@@ -55,6 +59,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectIpoTemplate,
   onExportPNG,
   onExportJSON,
+  onExportExcel,
+  onExportPDF,
   direction,
   onToggleDirection,
   onOpenHelp,
@@ -444,6 +450,30 @@ export const Header: React.FC<HeaderProps> = ({
               <Share2 className="w-3.5 h-3.5" />
             )}
             <span className="hidden sm:inline">Bagikan</span>
+          </button>
+        )}
+
+        {/* EXPORT PDF BUTTON (IPO Mode - A4 Portrait) */}
+        {activeMode === 'ipo' && onExportPDF && (
+          <button
+            onClick={onExportPDF}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 border border-rose-200 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+            title="Unduh tabel IPO Chart dalam format PDF A4 Portrait (multi-halaman, tanpa terpotong)"
+          >
+            <FileText className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span className="hidden sm:inline">Ekspor PDF</span>
+          </button>
+        )}
+
+        {/* EXPORT EXCEL BUTTON (IPO Mode) */}
+        {activeMode === 'ipo' && onExportExcel && (
+          <button
+            onClick={onExportExcel}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+            title="Unduh tabel IPO Chart & Relasi dalam format Microsoft Excel (.xlsx) yang sudah ter-adjust otomatis"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span className="hidden sm:inline">Ekspor Excel</span>
           </button>
         )}
 

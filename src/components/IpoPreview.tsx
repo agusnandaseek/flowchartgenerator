@@ -17,6 +17,8 @@ import {
   Table2,
   Network,
   Download,
+  FileSpreadsheet,
+  FileText,
   Maximize2,
   Minimize2,
   Info,
@@ -31,11 +33,15 @@ import type { IpoFunction, IpoConnection } from '../types/ipoChart';
 import { IpoFunctionNode } from '../nodes/IpoFunctionNode';
 import { IpoRelationshipEdge } from '../edges/IpoRelationshipEdge';
 import { getIpoRelationshipElements, updateIpoEdgeHandles } from '../utils/ipoRelationshipLayout';
+import { exportIpoToExcel } from '../utils/ipoExcelExport';
+import { exportIpoToPdf } from '../utils/ipoPdfExport';
 
 export interface IpoPreviewRef {
   exportCurrentView: () => Promise<boolean>;
   exportAllCharts: (filename?: string) => Promise<boolean>;
   exportRelationships: (filename?: string) => Promise<boolean>;
+  exportExcel: () => void;
+  exportPdf: () => void;
   resetPositions: () => void;
   getNodePositions: () => Record<string, { x: number; y: number }>;
 }
@@ -820,10 +826,20 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
       return handleExportAllCharts();
     }, [subMode, handleExportRelationships, handleExportAllCharts]);
 
+    const handleExportExcel = useCallback(() => {
+      exportIpoToExcel(projectName, functions, connections);
+    }, [projectName, functions, connections]);
+
+    const handleExportPdf = useCallback(() => {
+      exportIpoToPdf(projectName, functions);
+    }, [projectName, functions]);
+
     useImperativeHandle(ref, () => ({
       exportCurrentView: handleExportCurrentView,
       exportAllCharts: handleExportAllCharts,
       exportRelationships: handleExportRelationships,
+      exportExcel: handleExportExcel,
+      exportPdf: handleExportPdf,
       resetPositions: () => resetPositionsCallbackRef.current(),
       getNodePositions: () => {
         const result: Record<string, { x: number; y: number }> = {
@@ -874,6 +890,24 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
 
           {/* Action buttons */}
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleExportPdf}
+              className="flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 hover:text-rose-900 border border-rose-200 rounded-lg text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+              title="Ekspor seluruh IPO Chart ke berkas PDF A4 Portrait (multi-halaman, anti-terpotong, lebar penuh A4)"
+            >
+              <FileText className="w-3.5 h-3.5 text-rose-600" />
+              <span className="hidden sm:inline">Export PDF (A4)</span>
+            </button>
+
+            <button
+              onClick={handleExportExcel}
+              className="flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 hover:text-emerald-900 border border-emerald-200 rounded-lg text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+              title="Ekspor seluruh IPO Chart & Relasi ke berkas Microsoft Excel (.xlsx) dengan ukuran kolom & baris otomatis"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">Export Excel (.xlsx)</span>
+            </button>
+
             <button
               onClick={() => {
                 if (subMode === 'tables') {
