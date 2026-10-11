@@ -5,7 +5,7 @@ import { StructurePresetToolbar } from './components/StructurePresetToolbar';
 import { PseudocodeEditor, type PseudocodeEditorRef } from './components/PseudocodeEditor';
 import { FlowchartPreview, type FlowchartPreviewRef } from './components/FlowchartPreview';
 import { StructureChartPreview, type StructureChartPreviewRef } from './components/StructureChartPreview';
-import { IpoEditor } from './components/IpoEditor';
+import { IpoEditor, type IpoEditorRef } from './components/IpoEditor';
 import { IpoPreview, type IpoPreviewRef } from './components/IpoPreview';
 import { ProjectModal } from './components/ProjectModal';
 import { ShareModal } from './components/ShareModal';
@@ -216,7 +216,22 @@ export function App() {
   const previewRef = useRef<FlowchartPreviewRef>(null);
   const structureEditorRef = useRef<PseudocodeEditorRef>(null);
   const structurePreviewRef = useRef<StructureChartPreviewRef>(null);
+  const ipoEditorRef = useRef<IpoEditorRef>(null);
   const ipoPreviewRef = useRef<IpoPreviewRef>(null);
+
+  const handleFocusIpoConnection = useCallback((connId: string) => {
+    setIsFullscreenFlowchart(false);
+    setTimeout(() => {
+      ipoEditorRef.current?.focusConnection(connId);
+    }, 30);
+  }, []);
+
+  const handleFocusIpoFunction = useCallback((fnId: string) => {
+    setIsFullscreenFlowchart(false);
+    setTimeout(() => {
+      ipoEditorRef.current?.focusFunction(fnId);
+    }, 30);
+  }, []);
 
   const handleToggleFullscreen = () => {
     setIsFullscreenFlowchart((prev) => !prev);
@@ -687,6 +702,7 @@ export function App() {
               /* IPO Chart Builder */
               <div className={`h-full flex flex-col min-h-0 ${tutorialTourStep === 1 ? 'ring-2 ring-indigo-500 rounded-lg animate-pulse' : ''}`}>
                 <IpoEditor
+                  ref={ipoEditorRef}
                   functions={ipoFunctions}
                   connections={ipoConnections}
                   onChangeFunctions={setIpoFunctions}
@@ -740,6 +756,8 @@ export function App() {
               onPositionsChange={setIpoNodePositions}
               onUpdateConnection={handleUpdateIpoConnection}
               onDeleteConnection={handleDeleteIpoConnection}
+              onFocusConnection={handleFocusIpoConnection}
+              onFocusFunction={handleFocusIpoFunction}
               isFullscreen={isFullscreenFlowchart}
               onToggleFullscreen={handleToggleFullscreen}
             />

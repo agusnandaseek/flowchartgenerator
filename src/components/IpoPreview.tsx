@@ -65,6 +65,8 @@ interface IpoPreviewProps {
   onPositionsChange?: (positions: Record<string, { x: number; y: number }> | null) => void;
   onUpdateConnection?: (connId: string, updates: Partial<IpoConnection>) => void;
   onDeleteConnection?: (connId: string) => void;
+  onFocusConnection?: (connId: string) => void;
+  onFocusFunction?: (fnId: string) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
 }
@@ -84,6 +86,8 @@ const IpoRelationshipsDiagram: React.FC<{
   onPositionsChange?: (positions: Record<string, { x: number; y: number }> | null) => void;
   onUpdateConnection?: (connId: string, updates: Partial<IpoConnection>) => void;
   onDeleteConnection?: (connId: string) => void;
+  onFocusConnection?: (connId: string) => void;
+  onFocusFunction?: (fnId: string) => void;
   diagramRef: React.RefObject<HTMLDivElement | null>;
   onNodesUpdatedRef: React.MutableRefObject<Node[]>;
   onResetPositionsRef: React.MutableRefObject<() => void>;
@@ -94,6 +98,8 @@ const IpoRelationshipsDiagram: React.FC<{
   onPositionsChange,
   onUpdateConnection,
   onDeleteConnection,
+  onFocusConnection,
+  onFocusFunction,
   diagramRef,
   onNodesUpdatedRef,
   onResetPositionsRef,
@@ -293,6 +299,10 @@ const IpoRelationshipsDiagram: React.FC<{
           labelPosition: typeof conn?.labelPosition === 'number' ? conn.labelPosition : (e.data as any)?.labelPosition ?? 0.5,
           onUpdateConnection,
           onSelectEdge: (edgeId: string) => setSelectedEdgeId(edgeId),
+          onDoubleClickEdge: (edgeId: string) => {
+            setSelectedEdgeId(edgeId);
+            onFocusConnection?.(edgeId);
+          },
         },
         style: {
           ...e.style,
@@ -303,7 +313,7 @@ const IpoRelationshipsDiagram: React.FC<{
         },
       };
     });
-  }, [edges, selectedEdgeId, connections, onUpdateConnection]);
+  }, [edges, selectedEdgeId, connections, onUpdateConnection, onFocusConnection]);
 
   return (
     <div ref={diagramRef} className="w-full h-full relative bg-slate-50">
@@ -315,6 +325,13 @@ const IpoRelationshipsDiagram: React.FC<{
         onNodeDragStop={handleNodeDragStop}
         onEdgeClick={(_event, edge) => {
           setSelectedEdgeId(edge.id);
+        }}
+        onEdgeDoubleClick={(_event, edge) => {
+          setSelectedEdgeId(edge.id);
+          onFocusConnection?.(edge.id);
+        }}
+        onNodeDoubleClick={(_event, node) => {
+          onFocusFunction?.(node.id);
         }}
         onPaneClick={() => {
           setSelectedEdgeId(null);
@@ -618,6 +635,8 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
       onPositionsChange,
       onUpdateConnection,
       onDeleteConnection,
+      onFocusConnection,
+      onFocusFunction,
       isFullscreen,
       onToggleFullscreen,
     },
@@ -1032,6 +1051,8 @@ export const IpoPreview = forwardRef<IpoPreviewRef, IpoPreviewProps>(
                 onPositionsChange={onPositionsChange}
                 onUpdateConnection={onUpdateConnection}
                 onDeleteConnection={onDeleteConnection}
+                onFocusConnection={onFocusConnection}
+                onFocusFunction={onFocusFunction}
                 diagramRef={diagramWrapperRef}
                 onNodesUpdatedRef={activeNodesRef}
                 onResetPositionsRef={resetPositionsCallbackRef}

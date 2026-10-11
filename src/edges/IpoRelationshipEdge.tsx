@@ -19,6 +19,7 @@ export interface IpoRelationshipEdgeData {
   label?: string;
   onUpdateConnection?: (connId: string, updates: { labelPosition?: number; color?: string; label?: string; lineStyle?: 'solid' | 'dashed' }) => void;
   onSelectEdge?: (edgeId: string) => void;
+  onDoubleClickEdge?: (edgeId: string) => void;
 }
 
 /**
@@ -199,6 +200,12 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
     edgeData?.onSelectEdge?.(id);
   }, [edgeData, id]);
 
+  const handleEdgeDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    edgeData?.onSelectEdge?.(id);
+    edgeData?.onDoubleClickEdge?.(id);
+  }, [edgeData, id]);
+
   return (
     <>
       {/* 1. Garis Relasi Utama (SVG Path) */}
@@ -209,6 +216,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
         d={edgePath}
         fill="none"
         markerEnd={markerEnd}
+        onDoubleClick={handleEdgeDoubleClick}
         style={{
           fill: 'none',
           stroke: edgeColor,
@@ -228,6 +236,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
         className="react-flow__edge-interaction cursor-pointer"
         style={{ fill: 'none' }}
         onClick={handleEdgeClick}
+        onDoubleClick={handleEdgeDoubleClick}
       />
 
       {/* 3. Label Badge Draggable yang 100% terkunci di atas garis */}
@@ -250,6 +259,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
                 e.stopPropagation();
                 edgeData?.onSelectEdge?.(id);
               }}
+              onDoubleClick={handleEdgeDoubleClick}
               className={`group flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold transition-shadow ${
                 isDragging
                   ? 'cursor-grabbing scale-105 shadow-lg ring-2'
@@ -263,7 +273,7 @@ export const IpoRelationshipEdge: React.FC<EdgeProps> = memo((props) => {
                 borderStyle: 'solid',
                 boxShadow: isDragging ? `0 4px 12px ${edgeColor}33` : undefined,
               }}
-              title="Klik untuk atur / Geser untuk pindahkan posisi label di sepanjang garis"
+              title="Klik untuk atur / Double-click untuk lompat ke menu relasi di kiri / Geser untuk pindahkan posisi label"
             >
               <GripVertical
                 className="w-2.5 h-2.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0"

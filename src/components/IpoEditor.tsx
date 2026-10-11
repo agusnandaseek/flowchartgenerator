@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import {
   Plus,
   Trash2,
@@ -24,6 +24,11 @@ import type {
 import { validateIpoProject } from '../utils/ipoValidation';
 import { IPO_TEMPLATES } from '../utils/ipoTemplates';
 
+export interface IpoEditorRef {
+  focusConnection: (connId: string) => void;
+  focusFunction: (fnId: string) => void;
+}
+
 interface IpoEditorProps {
   functions: IpoFunction[];
   connections: IpoConnection[];
@@ -36,19 +41,74 @@ interface IpoEditorProps {
 const generateId = (prefix: string) =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
 
-export const IpoEditor: React.FC<IpoEditorProps> = ({
-  functions,
-  connections,
-  onChangeFunctions,
-  onChangeConnections,
-  onLoadTemplate,
-  onResetBlank,
-}) => {
-  const [activeTab, setActiveTab] = useState<'functions' | 'connections'>('functions');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+export const IpoEditor = forwardRef<IpoEditorRef, IpoEditorProps>(
+  (
+    {
+      functions,
+      connections,
+      onChangeFunctions,
+      onChangeConnections,
+      onLoadTemplate,
+      onResetBlank,
+    },
+    ref
+  ) => {
+    const [activeTab, setActiveTab] = useState<'functions' | 'connections'>('functions');
+    const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+    const [highlightedConnId, setHighlightedConnId] = useState<string | null>(null);
+    const [highlightedFnId, setHighlightedFnId] = useState<string | null>(null);
 
-  // Validate state
-  const { functionErrors, connectionErrors } = validateIpoProject(functions, connections);
+    const connCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const fnCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const focusConnection = useCallback((connId: string) => {
+      setActiveTab('connections');
+      setHighlightedFnId(null);
+      setHighlightedConnId(connId);
+
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedConnId((prev) => (prev === connId ? null : prev));
+      }, 4000);
+
+      setTimeout(() => {
+        const el = connCardRefs.current[connId];
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 60);
+    }, []);
+
+    const focusFunction = useCallback((fnId: string) => {
+      setActiveTab('functions');
+      setHighlightedConnId(null);
+      setHighlightedFnId(fnId);
+
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedFnId((prev) => (prev === fnId ? null : prev));
+      }, 4000);
+
+      setTimeout(() => {
+        const el = fnCardRefs.current[fnId];
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 60);
+    }, []);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        focusConnection,
+        focusFunction,
+      }),
+      [focusConnection, focusFunction]
+    );
+
+    // Validate state
+    const { functionErrors, connectionErrors } = validateIpoProject(functions, connections);
 
   // --- FUNCTION & DATABASE MANAGEMENT ---
   const handleAddFunction = () => {
@@ -454,10 +514,18 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                   const dbConns = connections.filter(
                     (c) => c.sourceFunctionId === fn.id || c.targetFunctionId === fn.id
                   );
+                  const isFnHighlighted = highlightedFnId === fn.id;
                   return (
                     <div
                       key={fn.id}
-                      className="bg-white rounded-xl border-2 border-purple-200 shadow-2xs overflow-hidden transition-all hover:border-purple-300"
+                      ref={(el) => {
+                        fnCardRefs.current[fn.id] = el;
+                      }}
+                      className={`bg-white rounded-xl border-2 shadow-2xs overflow-hidden transition-all duration-300 ${
+                        isFnHighlighted
+                          ? 'border-purple-600 ring-4 ring-purple-200 bg-purple-50/40 scale-[1.01]'
+                          : 'border-purple-200 hover:border-purple-300'
+                      }`}
                     >
                       <div className="p-2.5 bg-purple-50/70 border-b border-purple-100 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -535,10 +603,18 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                   );
                 }
 
+                const isFnHighlighted = highlightedFnId === fn.id;
                 return (
                   <div
                     key={fn.id}
-                    className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition-all hover:border-slate-300"
+                    ref={(el) => {
+                      fnCardRefs.current[fn.id] = el;
+                    }}
+                    className={`bg-white rounded-xl border shadow-2xs overflow-hidden transition-all duration-300 ${
+                      isFnHighlighted
+                        ? 'border-indigo-600 ring-4 ring-indigo-200 bg-indigo-50/30 scale-[1.01]'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
                   >
                     {/* Function Card Header */}
                     <div className="p-2.5 bg-slate-50 border-b border-slate-200 space-y-2">
@@ -842,12 +918,20 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                   tgtIn?.name?.trim() ||
                   `Connection #${connIdx + 1}`;
                 const isInvalid = !!connectionErrors[conn.id];
+                const isConnHighlighted = highlightedConnId === conn.id;
 
                 return (
                   <div
                     key={conn.id}
-                    className={`bg-white rounded-xl border p-3 space-y-2.5 shadow-2xs transition-all ${
-                      isInvalid ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'
+                    ref={(el) => {
+                      connCardRefs.current[conn.id] = el;
+                    }}
+                    className={`rounded-xl border p-3 space-y-2.5 shadow-2xs transition-all duration-300 ${
+                      isConnHighlighted
+                        ? 'border-emerald-600 ring-4 ring-emerald-200 bg-emerald-50/50 scale-[1.01]'
+                        : isInvalid
+                        ? 'border-rose-300 bg-rose-50/20'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     {/* Header */}
@@ -856,10 +940,21 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
                         className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-w-0"
                         title={relationTitle}
                       >
-                        <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-mono text-[10px] flex items-center justify-center font-bold shrink-0">
+                        <span
+                          className={`w-4 h-4 rounded font-mono text-[10px] flex items-center justify-center font-bold shrink-0 ${
+                            isConnHighlighted
+                              ? 'bg-emerald-600 text-white animate-pulse'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
                           {connIdx + 1}
                         </span>
                         <span className="truncate font-mono">{relationTitle}</span>
+                        {isConnHighlighted && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold tracking-wide shrink-0">
+                            Dipilih
+                          </span>
+                        )}
                       </span>
                       <button
                         onClick={() => handleDeleteConnection(conn.id)}
@@ -1039,4 +1134,7 @@ export const IpoEditor: React.FC<IpoEditorProps> = ({
       </div>
     </div>
   );
-};
+});
+
+IpoEditor.displayName = 'IpoEditor';
+
